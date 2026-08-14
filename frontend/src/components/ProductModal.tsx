@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Minus, Plus, X } from "lucide-react";
 import type { MenuItem } from "@/lib/menu-data";
 import { formatAUD } from "@/lib/restaurant";
@@ -15,7 +15,7 @@ export function ProductModal({ item, onClose }: { item: MenuItem | null; onClose
   const [selected, setSelected] = useState<Record<string, string[]>>({});
 
   // Reset when item changes
-  useMemo(() => {
+  useEffect(() => {
     setQty(1);
     setNotes("");
     setSelected({});
@@ -23,11 +23,15 @@ export function ProductModal({ item, onClose }: { item: MenuItem | null; onClose
 
   if (!item) return null;
 
-  const toggle = (groupId: string, optionId: string, single: boolean) => {
+  const toggle = (groupId: string, optionId: string, max: number) => {
     setSelected((prev) => {
       const cur = prev[groupId] ?? [];
-      if (single) return { ...prev, [groupId]: [optionId] };
-      return { ...prev, [groupId]: cur.includes(optionId) ? cur.filter((x) => x !== optionId) : [...cur, optionId] };
+      if (max === 1) return { ...prev, [groupId]: [optionId] };
+      if (cur.includes(optionId)) {
+        return { ...prev, [groupId]: cur.filter((value) => value !== optionId) };
+      }
+      if (cur.length >= max) return prev;
+      return { ...prev, [groupId]: [...cur, optionId] };
     });
   };
 
@@ -40,11 +44,16 @@ export function ProductModal({ item, onClose }: { item: MenuItem | null; onClose
   }, 0);
   const itemTotal = (item.price + modsTotal) * qty;
 
-  const missing = (item.modifiers ?? []).filter((g) => g.required && !(selected[g.id]?.length));
+  const invalidGroups = (item.modifiers ?? []).filter((group) => {
+    const count = selected[group.id]?.length ?? 0;
+    const min = group.min ?? (group.required ? 1 : 0);
+    const max = group.max ?? (group.required ? 1 : group.options.length);
+    return count < min || count > max;
+  });
 
   const submit = () => {
-    if (missing.length) {
-      toast.error(`Please choose: ${missing.map((m) => m.name).join(", ")}`);
+    if (invalidGroups.length) {
+      toast.error(`Please check: ${invalidGroups.map((group) => group.name).join(", ")}`);
       return;
     }
     addLine(buildLineFromItem(item, selected, qty, notes || undefined));
@@ -83,12 +92,15 @@ export function ProductModal({ item, onClose }: { item: MenuItem | null; onClose
           <p className="mt-3 text-sm text-muted-foreground">{item.description}</p>
 
           {item.modifiers?.map((group) => {
-            const single = group.required || group.max === 1;
+            const min = group.min ?? (group.required ? 1 : 0);
+            const max = group.max ?? (group.required ? 1 : group.options.length);
+            const single = max === 1;
             return (
               <fieldset key={group.id} className="mt-6">
                 <legend className="font-display font-bold flex items-center gap-2">
                   {group.name}
-                  {group.required && <span className="text-xs font-medium text-primary uppercase tracking-wide">Required</span>}
+                  {min > 0 && <span className="text-xs font-medium text-primary uppercase tracking-wide">Required</span>}
+                  {max > 1 && <span className="text-xs font-normal text-muted-foreground">Choose up to {max}</span>}
                 </legend>
                 <div className="mt-2 grid gap-2">
                   {group.options.map((opt) => {
@@ -104,7 +116,7 @@ export function ProductModal({ item, onClose }: { item: MenuItem | null; onClose
                             name={group.id}
                             className="h-4 w-4 accent-primary"
                             checked={chosen}
-                            onChange={() => toggle(group.id, opt.id, single)}
+                            onChange={() => toggle(group.id, opt.id, max)}
                           />
                           <span className="text-sm font-medium">{opt.name}</span>
                         </span>

@@ -1,8 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowRight, Clock, Flame, Leaf, Sparkles, Truck } from "lucide-react";
+import { ArrowRight, Clock, CreditCard, Flame, Leaf, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { menu, reviews } from "@/lib/menu-data";
-import { formatAUD, restaurant } from "@/lib/restaurant";
+import { restaurant } from "@/lib/restaurant";
 import { Button } from "@/components/ui/button";
 import { MenuItemCard } from "@/components/MenuItemCard";
 import { ProductModal } from "@/components/ProductModal";
@@ -13,7 +13,7 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "Seoul Table | Korean Restaurant in Melbourne" },
-      { name: "description", content: "Bold Korean flavours, made fresh. Order Korean BBQ, fried chicken, bibimbap and more for pickup or delivery in Melbourne." },
+      { name: "description", content: "Bold Korean flavours, made fresh. Order Korean BBQ, fried chicken, bibimbap and more for pickup in Melbourne." },
       { property: "og:title", content: "Seoul Table | Korean Restaurant in Melbourne" },
       { property: "og:description", content: "Bold Korean flavours, made fresh." },
     ],
@@ -51,7 +51,7 @@ function Home() {
             </div>
             <div className="mt-6 flex items-center gap-4 text-sm text-muted-foreground">
               <span className="inline-flex items-center gap-1.5"><Clock className="h-4 w-4" /> Pickup in ~{restaurant.ordering.pickupPrepMinutes} min</span>
-              <span className="inline-flex items-center gap-1.5"><Truck className="h-4 w-4" /> Delivery in ~{restaurant.ordering.deliveryEtaMinutes} min</span>
+              <span className="inline-flex items-center gap-1.5"><CreditCard className="h-4 w-4" /> Secure Stripe Sandbox checkout</span>
             </div>
           </div>
           <div className="relative animate-fade-up">
@@ -180,7 +180,7 @@ function Home() {
       <section className="container-page py-16">
         <div className="rounded-3xl bg-ink text-cream p-8 md:p-14 text-center">
           <h2 className="font-display text-3xl md:text-5xl font-extrabold">Hungry yet?</h2>
-          <p className="mt-3 opacity-80">Order now for pickup or local delivery. From {formatAUD(restaurant.ordering.deliveryMinimum)} for delivery.</p>
+          <p className="mt-3 opacity-80">Choose a pickup time, pay securely online and follow the kitchen status from your phone.</p>
           <Button asChild size="lg" className="mt-6 h-12 px-6 bg-primary hover:bg-primary-dark text-primary-foreground">
             <Link to="/order">Start your order</Link>
           </Button>

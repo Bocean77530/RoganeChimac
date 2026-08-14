@@ -3,7 +3,7 @@ export const restaurant = {
   name: "Seoul Table",
   tagline: "Bold Korean Flavours, Made Fresh",
   description:
-    "Classic Korean comfort food, sizzling barbecue, crispy fried chicken and street-food favourites, prepared fresh for pickup or delivery.",
+    "Classic Korean comfort food, sizzling barbecue, crispy fried chicken and street-food favourites, prepared fresh for pickup.",
   address: {
     line1: "Shop 4, 128 Little Collins Street",
     suburb: "Melbourne VIC 3000",
@@ -27,18 +27,25 @@ export const restaurant = {
   ],
   ordering: {
     pickupPrepMinutes: 20,
-    deliveryEtaMinutes: 45,
-    deliveryFee: 690, // cents
-    deliveryMinimum: 2500, // cents
-    deliveryRadiusKm: 6,
   },
 } as const;
 
 export function isOpenNow(now = new Date()): boolean {
-  const day = restaurant.hours[(now.getDay() + 6) % 7]; // Mon-first
+  const parts = new Intl.DateTimeFormat("en-AU", {
+    timeZone: "Australia/Melbourne",
+    weekday: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const weekday = parts.find((part) => part.type === "weekday")?.value;
+  const day = restaurant.hours.find((hours) => hours.day === weekday);
+  if (!day) return false;
   const [oh, om] = day.open.split(":").map(Number);
   const [ch, cm] = day.close.split(":").map(Number);
-  const mins = now.getHours() * 60 + now.getMinutes();
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
+  const mins = hour * 60 + minute;
   return mins >= oh * 60 + om && mins <= ch * 60 + cm;
 }
 

@@ -4,6 +4,7 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
@@ -65,10 +66,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Seoul Table | Korean Restaurant and Online Ordering" },
-      { name: "description", content: "Order authentic Korean barbecue, fried chicken, bibimbap, noodles and classic Korean comfort food for pickup or local delivery." },
+      { name: "description", content: "Order authentic Korean barbecue, fried chicken, bibimbap, noodles and classic Korean comfort food for pickup." },
       { name: "author", content: "Seoul Table" },
       { property: "og:title", content: "Seoul Table | Korean Restaurant and Online Ordering" },
-      { property: "og:description", content: "Bold Korean flavours, made fresh. Order pickup or delivery in Melbourne." },
+      { property: "og:description", content: "Bold Korean flavours, made fresh. Order pickup in Melbourne." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -100,14 +101,18 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const isAdminRoute = useRouterState({
+    select: (state) => state.location.pathname.startsWith("/admin"),
+  });
+
   return (
     <QueryClientProvider client={queryClient}>
       <div className="flex min-h-dvh flex-col">
-        <Header />
+        {!isAdminRoute && <Header />}
         <main className="flex-1">
           <Outlet />
         </main>
-        <Footer />
+        {!isAdminRoute && <Footer />}
       </div>
       <Toaster richColors position="top-center" />
     </QueryClientProvider>

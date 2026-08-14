@@ -14,7 +14,7 @@ export const Route = createFileRoute("/order")({
   head: () => ({
     meta: [
       { title: "Order Online | Seoul Table" },
-      { name: "description", content: "Order Korean BBQ, fried chicken, bibimbap and more for pickup or delivery from Seoul Table." },
+      { name: "description", content: "Order Korean BBQ, fried chicken, bibimbap and more for pickup from Seoul Table." },
     ],
   }),
   component: OrderPage,
@@ -26,9 +26,9 @@ function OrderPage() {
   const [filter, setFilter] = useState<null | "vegetarian" | "vegan" | "gluten-free" | "spicy">(null);
   const [activeCat, setActiveCat] = useState<string>("popular");
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
-  const { method, setMethod, deliveryAddress, setDeliveryAddress, lines, promoCode } = useCart();
+  const { lines, promoCode } = useCart();
   const [cartOpen, setCartOpen] = useState(false);
-  const totals = computeTotals({ lines, method, promoCode });
+  const totals = computeTotals({ lines, promoCode });
 
   const grouped = useMemo(() => menuByCategory(), []);
   const openNow = isOpenNow();
@@ -82,37 +82,13 @@ function OrderPage() {
                 <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs ${openNow ? "bg-green/15 text-green" : "bg-muted text-muted-foreground"}`}>
                   <span className={`h-1.5 w-1.5 rounded-full ${openNow ? "bg-green" : "bg-muted-foreground"}`} /> {openNow ? "Open now" : "Currently closed"}
                 </span>
-                {" · "}Ready in ~{method === "pickup" ? restaurant.ordering.pickupPrepMinutes : restaurant.ordering.deliveryEtaMinutes} min
+                {" · "}Pickup ready in ~{restaurant.ordering.pickupPrepMinutes} min
               </p>
             </div>
-            <div className="ml-auto flex items-center gap-2">
-              <div className="rounded-full border border-border bg-card p-1 inline-flex">
-                {(["pickup", "delivery"] as const).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setMethod(m)}
-                    className={`px-4 h-9 rounded-full text-sm font-semibold capitalize transition ${method === m ? "bg-primary text-primary-foreground" : "text-foreground/70 hover:text-foreground"}`}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
+            <div className="ml-auto rounded-full border border-primary/30 bg-primary/5 px-4 py-2 text-sm font-semibold text-primary">
+              Pickup only
             </div>
           </div>
-          {method === "delivery" && (
-            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-background p-3">
-              <Input
-                placeholder="Enter your delivery address"
-                value={deliveryAddress}
-                onChange={(e) => setDeliveryAddress(e.target.value)}
-                className="flex-1 min-w-[200px]"
-                aria-label="Delivery address"
-              />
-              <p className="text-xs text-muted-foreground">
-                Delivery fee {formatAUD(restaurant.ordering.deliveryFee)} · min {formatAUD(restaurant.ordering.deliveryMinimum)} · ~{restaurant.ordering.deliveryRadiusKm} km radius
-              </p>
-            </div>
-          )}
         </div>
       </div>
 
@@ -189,7 +165,7 @@ function OrderPage() {
         <aside className="hidden lg:block">
           <div className="sticky top-40 rounded-3xl border border-border bg-card p-5 shadow-card">
             <h3 className="font-display text-lg font-bold">Your order</h3>
-            <p className="text-xs text-muted-foreground capitalize">{method}</p>
+            <p className="text-xs text-muted-foreground">Pickup</p>
             {lines.length === 0 ? (
               <p className="mt-4 text-sm text-muted-foreground">Your cart is empty. Add a dish to get started.</p>
             ) : (
@@ -204,14 +180,10 @@ function OrderPage() {
                 </ul>
                 <div className="mt-4 space-y-1 border-t border-border pt-3 text-sm">
                   <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatAUD(totals.subtotal)}</span></div>
-                  {totals.deliveryFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Delivery</span><span>{formatAUD(totals.deliveryFee)}</span></div>}
                   {totals.discount > 0 && <div className="flex justify-between text-green"><span>Discount</span><span>−{formatAUD(totals.discount)}</span></div>}
                   <div className="flex justify-between font-display text-lg font-bold pt-1"><span>Total</span><span>{formatAUD(totals.total)}</span></div>
                 </div>
-                {totals.belowMinimum && (
-                  <p className="mt-2 text-xs text-primary">Add {formatAUD(restaurant.ordering.deliveryMinimum - totals.subtotal)} more for delivery.</p>
-                )}
-                <Button asChild disabled={totals.belowMinimum} className="mt-4 w-full h-11 bg-primary hover:bg-primary-dark text-primary-foreground">
+                <Button asChild className="mt-4 w-full h-11 bg-primary hover:bg-primary-dark text-primary-foreground">
                   <Link to="/checkout">Checkout</Link>
                 </Button>
               </>

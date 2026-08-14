@@ -3,12 +3,12 @@ import { Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { computeTotals, lineTotal, useCart } from "@/lib/cart-store";
-import { formatAUD, restaurant } from "@/lib/restaurant";
+import { formatAUD } from "@/lib/restaurant";
 import { Button } from "@/components/ui/button";
 
 export function CartDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const { lines, updateQuantity, removeLine, method, promoCode } = useCart();
-  const totals = computeTotals({ lines, method, promoCode });
+  const { lines, updateQuantity, removeLine, promoCode } = useCart();
+  const totals = computeTotals({ lines, promoCode });
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setMounted(true), []);
@@ -101,12 +101,6 @@ export function CartDrawer({ open, onOpenChange }: { open: boolean; onOpenChange
               <span className="text-muted-foreground">Subtotal</span>
               <span className="font-medium">{formatAUD(totals.subtotal)}</span>
             </div>
-            {totals.deliveryFee > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Delivery</span>
-                <span className="font-medium">{formatAUD(totals.deliveryFee)}</span>
-              </div>
-            )}
             {totals.discount > 0 && (
               <div className="flex justify-between text-sm text-green">
                 <span>Discount</span>
@@ -117,14 +111,8 @@ export function CartDrawer({ open, onOpenChange }: { open: boolean; onOpenChange
               <span>Total</span>
               <span>{formatAUD(totals.total)}</span>
             </div>
-            {totals.belowMinimum && (
-              <p className="text-xs text-primary">
-                Delivery minimum is {formatAUD(restaurant.ordering.deliveryMinimum)}. Add {formatAUD(restaurant.ordering.deliveryMinimum - totals.subtotal)} more to check out.
-              </p>
-            )}
             <Button
               asChild
-              disabled={totals.belowMinimum}
               className="w-full h-12 bg-primary hover:bg-primary-dark text-primary-foreground text-base font-semibold"
               onClick={() => onOpenChange(false)}
             >

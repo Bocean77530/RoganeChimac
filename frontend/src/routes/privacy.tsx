@@ -4,7 +4,7 @@ export const Route = createFileRoute("/privacy")({
   component: () => (
     <div className="container-page py-14 max-w-3xl prose">
       <h1 className="font-display text-4xl font-extrabold">Privacy Policy</h1>
-      <p className="mt-4 text-muted-foreground">We collect only what we need to process your order — name, contact details, delivery address and payment token — and we never sell your data. Payment details are handled by our PCI-compliant provider. Contact us to request deletion of your data at any time.</p>
+      <p className="mt-4 text-muted-foreground">We collect the name, phone number, email address and pickup-order details needed to process your order. Card details are entered directly into Stripe Checkout and do not pass through our server. We retain operational and payment records only for legitimate business, support and legal purposes, and we do not sell personal data. Contact us to request access, correction or deletion where applicable.</p>
     </div>
   ),
 });

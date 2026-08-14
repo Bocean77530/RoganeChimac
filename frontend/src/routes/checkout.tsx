@@ -1,135 +1,291 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { CreditCard, Loader2, LockKeyhole, MapPin } from "lucide-react";
+import { useRef, useState } from "react";
+import { toast } from "sonner";
 import { z } from "zod";
-import { computeTotals, useCart } from "@/lib/cart-store";
-import { formatAUD, restaurant } from "@/lib/restaurant";
+
+import { StripeEmbeddedCheckout } from "@/components/checkout/StripeEmbeddedCheckout";
+import {
+  createPendingOrderFn,
+  createStripeCheckoutSessionFn,
+  getPickupAvailabilityFn,
+  quoteOrderFn,
+} from "@/api/ordering";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { toast } from "sonner";
+import { Textarea } from "@/components/ui/textarea";
+import type { OrderTotalsSnapshot } from "@/domain/order";
+import { computeTotals, useCart } from "@/lib/cart-store";
+import { formatAUD, restaurant } from "@/lib/restaurant";
+
+const RESTAURANT_SLUG = "seoul-table";
+const TERMS_VERSION = "2026-08-14";
 
 export const Route = createFileRoute("/checkout")({
   head: () => ({
     meta: [
-      { title: "Checkout | Seoul Table" },
-      { name: "description", content: "Complete your Korean food order for pickup or delivery." },
+      { title: "Secure Pickup Checkout | Seoul Table" },
+      {
+        name: "description",
+        content: "Choose a pickup time and pay securely with Stripe.",
+      },
       { name: "robots", content: "noindex" },
     ],
   }),
   component: CheckoutPage,
 });
 
-const schema = z.object({
+const customerSchema = z.object({
   name: z.string().trim().min(2, "Please enter your name").max(80),
   phone: z.string().trim().min(8, "Please enter a valid mobile number").max(20),
   email: z.string().trim().email("Please enter a valid email").max(120),
   notes: z.string().trim().max(300).optional(),
 });
 
+type PaymentStage = {
+  orderId: string;
+  orderNumber: string;
+  trackingToken: string;
+  sessionId: string;
+  clientSecret: string;
+  pickupAt: string;
+  totals: OrderTotalsSnapshot;
+};
+
 function CheckoutPage() {
   const navigate = useNavigate();
-  const { lines, method, setMethod, scheduledFor, setScheduledFor, deliveryAddress, setDeliveryAddress, promoCode, setPromoCode, clear } = useCart();
-  const totals = computeTotals({ lines, method, promoCode });
+  const { lines, promoCode, setPromoCode } = useCart();
+  const previewTotals = computeTotals({
+    lines,
+    promoCode,
+  });
+  const checkoutAttemptId = useRef<string | null>(null);
 
   const [form, setForm] = useState({ name: "", phone: "", email: "", notes: "" });
-  const [payMethod, setPayMethod] = useState<"card" | "pickup">("card");
   const [terms, setTerms] = useState(false);
+  const [pickupChoice, setPickupChoice] = useState("asap");
   const [promoInput, setPromoInput] = useState(promoCode ?? "");
   const [submitting, setSubmitting] = useState(false);
+  const [paymentStage, setPaymentStage] = useState<PaymentStage | null>(null);
+
+  const availabilityQuery = useQuery({
+    queryKey: ["pickup-availability", RESTAURANT_SLUG],
+    queryFn: async () => {
+      const result = await getPickupAvailabilityFn({
+        data: { restaurantSlug: RESTAURANT_SLUG },
+      });
+      if (!result.ok) throw new Error(result.error.message);
+      return result.data;
+    },
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+  });
+
+  const slots = availabilityQuery.data?.slots ?? [];
+  const canOrder =
+    availabilityQuery.data?.orderingEnabled === true && slots.length > 0;
+
+  if (paymentStage) {
+    return (
+      <div className="container-page grid gap-8 py-10 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <section>
+          <p className="text-xs font-bold uppercase tracking-widest text-primary">
+            Order {paymentStage.orderNumber}
+          </p>
+          <h1 className="mt-1 font-display text-3xl font-extrabold">
+            Complete secure payment
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Your pickup slot is held while this Stripe Sandbox checkout is open.
+          </p>
+          <StripeEmbeddedCheckout
+            clientSecret={paymentStage.clientSecret}
+            className="mt-6"
+            onComplete={() =>
+              navigate({
+                to: "/order-confirmation",
+                search: { session_id: paymentStage.sessionId },
+              })
+            }
+          />
+        </section>
+
+        <aside className="h-fit rounded-3xl border border-border bg-card p-5 shadow-card lg:sticky lg:top-40">
+          <h2 className="font-display text-lg font-bold">Payment summary</h2>
+          <p className="mt-3 flex items-start gap-2 text-sm text-muted-foreground">
+            <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
+            Pickup {formatPickupTime(paymentStage.pickupAt)} at {restaurant.address.line1}
+          </p>
+          <div className="mt-5 space-y-1 border-t border-border pt-4 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Subtotal</span>
+              <span>{formatAUD(paymentStage.totals.subtotalCents)}</span>
+            </div>
+            {paymentStage.totals.discountCents > 0 && (
+              <div className="flex justify-between text-green">
+                <span>Discount</span>
+                <span>−{formatAUD(paymentStage.totals.discountCents)}</span>
+              </div>
+            )}
+            <div className="flex justify-between pt-1 font-display text-xl font-bold">
+              <span>Total</span>
+              <span>{formatAUD(paymentStage.totals.totalCents)}</span>
+            </div>
+          </div>
+          <p className="mt-4 flex gap-2 text-xs text-muted-foreground">
+            <LockKeyhole className="h-4 w-4 shrink-0" />
+            Card details are sent directly to Stripe and never pass through this website.
+          </p>
+        </aside>
+      </div>
+    );
+  }
 
   if (lines.length === 0) {
     return (
       <div className="container-page py-20 text-center">
         <h1 className="font-display text-3xl font-bold">Your cart is empty</h1>
         <p className="mt-2 text-muted-foreground">Add something from the menu first.</p>
-        <Button asChild className="mt-6"><Link to="/order">Browse menu</Link></Button>
+        <Button asChild className="mt-6">
+          <Link to="/order">Browse menu</Link>
+        </Button>
       </div>
     );
   }
 
   const applyPromo = () => {
     const code = promoInput.trim().toUpperCase();
-    if (!code) { setPromoCode(null); toast.success("Promo cleared"); return; }
-    if (code === "SEOUL10" && totals.subtotal >= 2000) {
-      setPromoCode(code);
-      toast.success("SEOUL10 applied — 10% off");
-    } else {
-      toast.error("Invalid or ineligible promo code");
-    }
+    setPromoCode(code || null);
+    toast.success(
+      code
+        ? `${code} will be validated before payment`
+        : "Promo code cleared",
+    );
   };
 
-  const placeOrder = async () => {
-    const parsed = schema.safeParse(form);
+  const continueToPayment = async () => {
+    const parsed = customerSchema.safeParse(form);
     if (!parsed.success) {
       toast.error(parsed.error.issues[0]?.message ?? "Please check your details");
       return;
     }
-    if (!terms) return toast.error("Please accept the ordering terms");
-    if (method === "delivery" && !deliveryAddress.trim()) return toast.error("Please enter a delivery address");
-    if (totals.belowMinimum) return toast.error("Order is below delivery minimum");
+    if (!terms) {
+      toast.error("Please accept the ordering terms");
+      return;
+    }
+    if (!canOrder) {
+      toast.error("No pickup times are currently available");
+      return;
+    }
 
     setSubmitting(true);
-    // Simulate backend order creation
-    await new Promise((r) => setTimeout(r, 700));
-    const orderNumber = "ST-" + Math.random().toString(36).slice(2, 7).toUpperCase();
-    const snapshot = {
-      orderNumber,
-      placedAt: new Date().toISOString(),
-      method,
-      scheduledFor,
-      deliveryAddress,
-      customer: parsed.data,
-      payMethod,
-      lines,
-      totals,
-    };
-    sessionStorage.setItem(`order:${orderNumber}`, JSON.stringify(snapshot));
-    clear();
-    navigate({ to: "/order-confirmation", search: { n: orderNumber } });
+    try {
+      const quote = await quoteOrderFn({
+        data: {
+          restaurantSlug: RESTAURANT_SLUG,
+          fulfillment:
+            pickupChoice === "asap"
+              ? { type: "pickup", mode: "asap" }
+              : { type: "pickup", mode: "scheduled", slotId: pickupChoice },
+          lines: lines.map((line) => ({
+            clientLineId: line.lineId,
+            menuItemId: line.itemId,
+            quantity: line.quantity,
+            modifierOptionIds: line.modifiers.map((modifier) => modifier.optionId),
+            notes: line.notes,
+          })),
+          promoCode: promoCode || undefined,
+        },
+      });
+      if (!quote.ok) throw new CheckoutError(quote.error.message);
+
+      checkoutAttemptId.current ??= crypto.randomUUID();
+      const order = await createPendingOrderFn({
+        data: {
+          quoteId: quote.data.quoteId,
+          attemptId: checkoutAttemptId.current,
+          customer: {
+            name: parsed.data.name,
+            phone: parsed.data.phone,
+            email: parsed.data.email,
+          },
+          notes: parsed.data.notes || undefined,
+          termsAccepted: true,
+          termsVersion: TERMS_VERSION,
+        },
+      });
+      if (!order.ok) throw new CheckoutError(order.error.message);
+
+      const checkout = await createStripeCheckoutSessionFn({
+        data: { orderId: order.data.id },
+      });
+      if (!checkout.ok) throw new CheckoutError(checkout.error.message);
+
+      if (checkout.data.session.launch.kind === "redirect") {
+        window.location.assign(checkout.data.session.launch.url);
+        return;
+      }
+
+      setPaymentStage({
+        orderId: order.data.id,
+        orderNumber: order.data.orderNumber,
+        trackingToken: order.data.trackingToken,
+        sessionId: checkout.data.session.sessionId,
+        clientSecret: checkout.data.session.launch.clientSecret,
+        pickupAt: order.data.pickupAt,
+        totals: order.data.totals,
+      });
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Checkout could not be started. Please try again.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
-    <div className="container-page py-10 grid gap-8 lg:grid-cols-[1fr_400px]">
+    <div className="container-page grid gap-8 py-10 lg:grid-cols-[1fr_400px]">
       <div className="space-y-8">
-        <h1 className="font-display text-3xl md:text-4xl font-extrabold">Checkout</h1>
+        <h1 className="font-display text-3xl font-extrabold md:text-4xl">Checkout</h1>
 
         <section className="rounded-3xl border border-border bg-card p-5">
-          <h2 className="font-display text-lg font-bold">1. Order method</h2>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            {(["pickup", "delivery"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setMethod(m)}
-                className={`rounded-2xl border-2 p-4 text-left transition ${method === m ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
-              >
-                <p className="font-semibold capitalize">{m}</p>
-                <p className="text-xs text-muted-foreground">
-                  {m === "pickup" ? `Ready in ~${restaurant.ordering.pickupPrepMinutes} min` : `Arrives in ~${restaurant.ordering.deliveryEtaMinutes} min · ${formatAUD(restaurant.ordering.deliveryFee)} fee`}
-                </p>
-              </button>
-            ))}
-          </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="when">When</Label>
-              <select
-                id="when"
-                value={scheduledFor ?? ""}
-                onChange={(e) => setScheduledFor(e.target.value || null)}
-                className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="">ASAP</option>
-                {["+30", "+60", "+90", "+120"].map((n) => (
-                  <option key={n} value={n}>In {n.replace("+", "")} minutes</option>
-                ))}
-              </select>
-            </div>
-            {method === "delivery" && (
-              <div>
-                <Label htmlFor="addr">Delivery address</Label>
-                <Input id="addr" value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} placeholder="Street and suburb" />
-              </div>
+          <h2 className="font-display text-lg font-bold">1. Pickup time</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Pickup from {restaurant.address.line1}, {restaurant.address.suburb}.
+          </p>
+          <div className="mt-4">
+            <Label htmlFor="pickup-time">When</Label>
+            <select
+              id="pickup-time"
+              value={pickupChoice}
+              onChange={(event) => setPickupChoice(event.target.value)}
+              disabled={availabilityQuery.isPending || !canOrder}
+              className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="asap">
+                {slots[0]
+                  ? `ASAP — ${slots[0].localLabel}`
+                  : availabilityQuery.isPending
+                    ? "Loading pickup times…"
+                    : "No pickup times available"}
+              </option>
+              {slots.slice(1).map((slot) => (
+                <option key={slot.id} value={slot.id}>
+                  {slot.localLabel} · {slot.remaining} remaining
+                </option>
+              ))}
+            </select>
+            {availabilityQuery.isError && (
+              <p className="mt-2 text-sm text-destructive">
+                {availabilityQuery.error instanceof Error
+                  ? availabilityQuery.error.message
+                  : "Pickup times could not be loaded."}
+              </p>
             )}
           </div>
         </section>
@@ -139,88 +295,89 @@ function CheckoutPage() {
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <div>
               <Label htmlFor="name">Full name</Label>
-              <Input id="name" autoComplete="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <Input id="name" autoComplete="name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
             </div>
             <div>
               <Label htmlFor="phone">Mobile</Label>
-              <Input id="phone" type="tel" autoComplete="tel" inputMode="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              <Input id="phone" type="tel" autoComplete="tel" inputMode="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
             </div>
             <div className="sm:col-span-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" autoComplete="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+              <Input id="email" type="email" autoComplete="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
             </div>
             <div className="sm:col-span-2">
               <Label htmlFor="notes">Order notes (optional)</Label>
-              <Textarea id="notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} maxLength={300} placeholder="Any allergies or delivery instructions?" />
+              <Textarea id="notes" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} maxLength={300} placeholder="Allergies or pickup notes" />
             </div>
           </div>
         </section>
 
-        <section className="rounded-3xl border border-border bg-card p-5">
-          <h2 className="font-display text-lg font-bold">3. Payment</h2>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            {([
-              ["card", "Pay online (card, Apple Pay, Google Pay)"],
-              ["pickup", "Pay at pickup"],
-            ] as const).map(([id, label]) => (
-              <button
-                key={id}
-                onClick={() => setPayMethod(id)}
-                disabled={id === "pickup" && method === "delivery"}
-                className={`rounded-2xl border-2 p-4 text-left transition disabled:opacity-40 ${payMethod === id ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
-              >
-                <p className="font-semibold">{label}</p>
-                <p className="text-xs text-muted-foreground">{id === "card" ? "Secure payment (test mode)" : "Available for pickup orders"}</p>
-              </button>
-            ))}
+        <section className="rounded-3xl border-2 border-primary/30 bg-primary/5 p-5">
+          <div className="flex items-start gap-3">
+            <CreditCard className="mt-0.5 h-5 w-5 text-primary" />
+            <div>
+              <h2 className="font-display text-lg font-bold">3. Pay online</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Secure Stripe Sandbox payment. Eligible wallets are shown automatically by Stripe.
+              </p>
+            </div>
           </div>
         </section>
 
         <label className="flex items-start gap-3 text-sm">
-          <input type="checkbox" checked={terms} onChange={(e) => setTerms(e.target.checked)} className="mt-1 h-4 w-4 accent-primary" />
-          <span>I agree to Seoul Table's <Link to="/terms" className="text-primary hover:underline">ordering terms</Link> and understand that our kitchen handles common allergens.</span>
+          <input type="checkbox" checked={terms} onChange={(event) => setTerms(event.target.checked)} className="mt-1 h-4 w-4 accent-primary" />
+          <span>
+            I agree to Seoul Table&apos;s <Link to="/terms" className="text-primary hover:underline">ordering terms</Link> and understand that our kitchen handles common allergens.
+          </span>
         </label>
       </div>
 
-      <aside className="lg:sticky lg:top-40 h-fit rounded-3xl border border-border bg-card p-5 shadow-card">
+      <aside className="h-fit rounded-3xl border border-border bg-card p-5 shadow-card lg:sticky lg:top-40">
         <h2 className="font-display text-lg font-bold">Order summary</h2>
-        <ul className="mt-3 space-y-3 max-h-72 overflow-y-auto">
-          {lines.map((l) => (
-            <li key={l.lineId} className="flex gap-3">
-              <img src={l.image} alt="" className="h-12 w-12 rounded-lg object-cover" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold truncate">{l.quantity}× {l.name}</p>
-                {l.modifiers.length > 0 && <p className="text-xs text-muted-foreground line-clamp-2">{l.modifiers.map((m) => m.name).join(" · ")}</p>}
+        <ul className="mt-3 max-h-72 space-y-3 overflow-y-auto">
+          {lines.map((line) => (
+            <li key={line.lineId} className="flex gap-3">
+              <img src={line.image} alt="" className="h-12 w-12 rounded-lg object-cover" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold">{line.quantity}× {line.name}</p>
+                {line.modifiers.length > 0 && <p className="line-clamp-2 text-xs text-muted-foreground">{line.modifiers.map((modifier) => modifier.name).join(" · ")}</p>}
               </div>
-              <span className="text-sm font-semibold">{formatAUD((l.basePrice + l.modifiers.reduce((a,m)=>a+m.priceDelta,0)) * l.quantity)}</span>
+              <span className="text-sm font-semibold">
+                {formatAUD((line.basePrice + line.modifiers.reduce((sum, modifier) => sum + modifier.priceDelta, 0)) * line.quantity)}
+              </span>
             </li>
           ))}
         </ul>
 
         <div className="mt-4 flex gap-2">
-          <Input placeholder="Promo code (try SEOUL10)" value={promoInput} onChange={(e) => setPromoInput(e.target.value)} />
+          <Input placeholder="Promo code" value={promoInput} onChange={(event) => setPromoInput(event.target.value)} />
           <Button variant="outline" onClick={applyPromo}>Apply</Button>
         </div>
 
         <div className="mt-4 space-y-1 border-t border-border pt-4 text-sm">
-          <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatAUD(totals.subtotal)}</span></div>
-          {totals.deliveryFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Delivery</span><span>{formatAUD(totals.deliveryFee)}</span></div>}
-          {totals.discount > 0 && <div className="flex justify-between text-green"><span>Discount</span><span>−{formatAUD(totals.discount)}</span></div>}
-          <div className="flex justify-between font-display text-xl font-bold pt-1"><span>Total</span><span>{formatAUD(totals.total)}</span></div>
+          <div className="flex justify-between"><span className="text-muted-foreground">Estimated subtotal</span><span>{formatAUD(previewTotals.subtotal)}</span></div>
+          {previewTotals.discount > 0 && <div className="flex justify-between text-green"><span>Estimated discount</span><span>−{formatAUD(previewTotals.discount)}</span></div>}
+          <div className="flex justify-between pt-1 font-display text-xl font-bold"><span>Estimated total</span><span>{formatAUD(previewTotals.total)}</span></div>
+          <p className="pt-2 text-xs text-muted-foreground">The server validates current menu prices, modifiers, promo eligibility and pickup capacity before Stripe opens.</p>
         </div>
 
-        {totals.belowMinimum && (
-          <p className="mt-3 text-sm text-primary">Add {formatAUD(restaurant.ordering.deliveryMinimum - totals.subtotal)} more to meet the delivery minimum.</p>
-        )}
-
-        <Button
-          onClick={placeOrder}
-          disabled={submitting || totals.belowMinimum}
-          className="mt-5 w-full h-12 bg-primary hover:bg-primary-dark text-primary-foreground text-base font-semibold"
-        >
-          {submitting ? "Placing order…" : `Place order · ${formatAUD(totals.total)}`}
+        <Button onClick={continueToPayment} disabled={submitting || availabilityQuery.isPending || !canOrder} className="mt-5 h-12 w-full bg-primary text-base font-semibold text-primary-foreground hover:bg-primary-dark">
+          {submitting ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Preparing payment…</span> : "Continue to secure payment"}
         </Button>
       </aside>
     </div>
   );
+}
+
+class CheckoutError extends Error {}
+
+function formatPickupTime(value: string): string {
+  return new Intl.DateTimeFormat("en-AU", {
+    timeZone: "Australia/Melbourne",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
 }
