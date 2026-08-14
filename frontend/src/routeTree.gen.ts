@@ -21,6 +21,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as AdminIntegrationsRouteImport } from './routes/admin/integrations'
 import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe/webhook'
 import { Route as AdminOrdersOrderIdRouteImport } from './routes/admin/orders/$orderId'
@@ -86,6 +87,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRoute,
 } as any)
+const ApiHealthRoute = ApiHealthRouteImport.update({
+  id: '/api/health',
+  path: '/api/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminIntegrationsRoute = AdminIntegrationsRouteImport.update({
   id: '/integrations',
   path: '/integrations',
@@ -120,6 +126,7 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/track-order': typeof TrackOrderRoute
   '/admin/integrations': typeof AdminIntegrationsRoute
+  '/api/health': typeof ApiHealthRoute
   '/admin/': typeof AdminIndexRoute
   '/admin/orders/$orderId': typeof AdminOrdersOrderIdRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
@@ -137,6 +144,7 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/track-order': typeof TrackOrderRoute
   '/admin/integrations': typeof AdminIntegrationsRoute
+  '/api/health': typeof ApiHealthRoute
   '/admin': typeof AdminIndexRoute
   '/admin/orders/$orderId': typeof AdminOrdersOrderIdRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
@@ -156,6 +164,7 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/track-order': typeof TrackOrderRoute
   '/admin/integrations': typeof AdminIntegrationsRoute
+  '/api/health': typeof ApiHealthRoute
   '/admin/': typeof AdminIndexRoute
   '/admin/orders/$orderId': typeof AdminOrdersOrderIdRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
@@ -176,6 +185,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/track-order'
     | '/admin/integrations'
+    | '/api/health'
     | '/admin/'
     | '/admin/orders/$orderId'
     | '/api/stripe/webhook'
@@ -193,6 +203,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/track-order'
     | '/admin/integrations'
+    | '/api/health'
     | '/admin'
     | '/admin/orders/$orderId'
     | '/api/stripe/webhook'
@@ -211,6 +222,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/track-order'
     | '/admin/integrations'
+    | '/api/health'
     | '/admin/'
     | '/admin/orders/$orderId'
     | '/api/stripe/webhook'
@@ -229,6 +241,7 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
   TrackOrderRoute: typeof TrackOrderRoute
+  ApiHealthRoute: typeof ApiHealthRoute
   ApiStripeWebhookRoute: typeof ApiStripeWebhookRoute
 }
 
@@ -318,6 +331,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/api/health': {
+      id: '/api/health'
+      path: '/api/health'
+      fullPath: '/api/health'
+      preLoaderRoute: typeof ApiHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/integrations': {
       id: '/admin/integrations'
       path: '/integrations'
@@ -377,6 +397,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,
   TrackOrderRoute: TrackOrderRoute,
+  ApiHealthRoute: ApiHealthRoute,
   ApiStripeWebhookRoute: ApiStripeWebhookRoute,
 }
 export const routeTree = rootRouteImport

@@ -6,7 +6,7 @@ TanStack Start application demonstrating an Australian restaurant pickup flow wi
 
 - Pickup only; delivery and pay-at-pickup are intentionally hidden.
 - Stripe Sandbox card payments through Embedded Checkout.
-- PostgreSQL/Neon persistence with Drizzle migrations and seed data.
+- Standard PostgreSQL persistence with Drizzle migrations and seed data.
 - Signed Stripe webhook as the only source of payment success.
 - Private-token confirmation and tracking pages backed by the database.
 - Demo `/admin` KDS with mock data, Mock POS, retry states, and 80mm browser printing.
@@ -15,7 +15,7 @@ The Admin/KDS is a presentation surface in this iteration. It is not authenticat
 
 ## Local setup
 
-Requirements: Bun, Node.js 22 or later, a PostgreSQL/Neon test database, a Stripe Sandbox, and Stripe CLI for local webhook forwarding.
+Requirements: Bun, Node.js 22 or later, PostgreSQL 15 or later, a Stripe Sandbox, and Stripe CLI for local webhook forwarding.
 
 ```bash
 bun install --frozen-lockfile
@@ -23,6 +23,14 @@ cp .env.example .env.local
 ```
 
 Fill `.env.local` with test credentials. Use a random `TRACKING_TOKEN_PEPPER` of at least 32 characters. Never commit `.env.local`, `sk_*`, or `whsec_*` values.
+
+For a local PostgreSQL database, `DATABASE_URL` can look like:
+
+```dotenv
+DATABASE_URL="postgresql://postgres:password@127.0.0.1:5432/seoul_table"
+```
+
+Hosted PostgreSQL connection strings normally include `sslmode=require`; copy the provider's complete value rather than rebuilding it by hand.
 
 Create and seed the test database:
 
@@ -37,6 +45,13 @@ Start the app:
 bun run dev
 ```
 
+The production Node server uses Railway's injected `PORT` automatically:
+
+```bash
+bun run build
+bun run start
+```
+
 In another terminal, forward Stripe Sandbox webhooks:
 
 ```bash
@@ -44,6 +59,48 @@ stripe listen --forward-to http://localhost:3000/api/stripe/webhook
 ```
 
 Copy the CLI-provided `whsec_...` value into `STRIPE_WEBHOOK_SECRET` and restart the app. This local secret is different from a Dashboard webhook endpoint secret.
+
+## Railway deployment
+
+This repository is a monorepo. In Railway, create an application service from the GitHub repository and set its root directory to `/frontend`. Railway will then discover `frontend/Dockerfile` and `frontend/railway.json`.
+
+1. Add a PostgreSQL service to the same Railway project.
+2. Add the application service variables below before the first deployment.
+3. Generate a public domain for the application and set `APP_BASE_URL` to its exact HTTPS origin.
+4. Deploy. `railway.json` runs the committed Drizzle migrations before switching traffic and checks `/api/health`.
+5. On the first deployment, open an SSH shell for the application service and run `node .output/scripts/seed.mjs` once to install the demo restaurant, hours, menu, modifiers, and promotion.
+6. Create the Stripe Sandbox webhook for `https://YOUR_DOMAIN/api/stripe/webhook`, add its endpoint secret as `STRIPE_WEBHOOK_SECRET`, and redeploy.
+
+Application service variables:
+
+```dotenv
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+DATABASE_POOL_MAX=10
+APP_BASE_URL=https://YOUR_DOMAIN
+VITE_STRIPE_PUBLISHABLE_KEY=pk_test_REPLACE_ME
+STRIPE_SECRET_KEY=sk_test_REPLACE_ME
+STRIPE_WEBHOOK_SECRET=whsec_REPLACE_ME
+PAYMENTS_EXPECT_LIVEMODE=false
+QUOTE_TTL_SECONDS=600
+PENDING_ORDER_TTL_SECONDS=1860
+TRACKING_TOKEN_PEPPER=replace-with-at-least-32-random-characters
+```
+
+`VITE_STRIPE_PUBLISHABLE_KEY` is intentionally public and is passed to the Docker build as a declared build argument. `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `DATABASE_URL`, and `TRACKING_TOKEN_PEPPER` remain runtime-only secrets. Do not enable Railway skipped builds when changing a `VITE_*` value because Vite embeds it in the browser bundle.
+
+The database is reached over Railway's private network. Do not replace `Postgres.DATABASE_URL` with a public TCP URL unless an external administrative tool specifically needs it.
+
+## Portable container deployment
+
+The production artifact is a standard Node.js 22 container listening on `PORT`, with no Railway imports in the application code. The same image can run on Azure Container Apps/App Service or AWS App Runner/ECS/Fargate. Each platform still needs:
+
+- a reachable PostgreSQL service (`Azure Database for PostgreSQL`, `Amazon RDS for PostgreSQL`, or another provider);
+- the same runtime environment variables and secrets;
+- an HTTPS public origin assigned to `APP_BASE_URL`;
+- a Stripe webhook targeting `/api/stripe/webhook`;
+- a release job or deployment step that runs `node scripts/migrate.mjs` before new application instances receive traffic.
+
+Platform networking, IAM, secret stores, TLS certificates, health-check configuration, and database backup policies are infrastructure settings and are intentionally kept outside the order/payment domain code.
 
 ## Stripe Sandbox configuration
 
@@ -86,12 +143,13 @@ The test script deliberately invokes Vitest through Node while Bun remains the p
 - `/track-order?t=...` — private database-backed tracking
 - `/admin` — demo KDS
 - `/admin/integrations` — mock integration states
+- `/api/health` — deployment liveness check
 
 ## Architecture boundaries
 
 - `src/api/ordering.ts` is the browser-safe Server Function facade.
 - `src/server/**` contains pricing, availability, order, payment, and tracking services.
-- `src/db/**` and `drizzle/**` contain the schema, seed, and generated migrations.
+- `src/db/**`, `drizzle/**`, and `scripts/migrate.mjs` contain the schema, seed, and generated migrations.
 - `src/integrations/payments/**` contains Stripe-specific code.
 - `src/integrations/pos/**` and `src/integrations/printing/**` are provider adapters.
 - `src/domain/**` contains provider-neutral contracts.
