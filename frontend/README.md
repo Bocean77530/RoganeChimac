@@ -55,7 +55,7 @@ bun run start
 In another terminal, forward Stripe Sandbox webhooks:
 
 ```bash
-stripe listen --forward-to http://localhost:3000/api/stripe/webhook
+stripe listen --forward-to http://localhost:8080/api/stripe/webhook
 ```
 
 Copy the CLI-provided `whsec_...` value into `STRIPE_WEBHOOK_SECRET` and restart the app. This local secret is different from a Dashboard webhook endpoint secret.

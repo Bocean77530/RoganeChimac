@@ -17,7 +17,7 @@
     "test:coverage": "node node_modules/vitest/vitest.mjs run --coverage",
     "db:generate": "drizzle-kit generate",
     "db:check": "drizzle-kit check",
-    "db:migrate": "node scripts/migrate.mjs",
+    "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
     "db:seed": "bun run src/db/seed.ts"
   },
   "dependencies": {
