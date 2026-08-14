@@ -30,7 +30,7 @@ describe("StripePaymentProvider", () => {
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: "payment",
-        ui_mode: "embedded",
+        ui_mode: "embedded_page",
         payment_method_types: ["card"],
         client_reference_id: "11111111-1111-4111-8111-111111111111",
         customer_email: "customer@example.com",

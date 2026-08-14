@@ -60,7 +60,7 @@ export class StripePaymentProvider implements PaymentProvider {
     const session = await this.stripe.checkout.sessions.create(
       {
         mode: "payment",
-        ui_mode: "embedded",
+        ui_mode: "embedded_page",
         payment_method_types: ["card"],
         client_reference_id: input.orderId,
         customer_email: input.customerEmail,

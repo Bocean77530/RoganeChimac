@@ -54,13 +54,13 @@ async function paymentView(
   db: DatabaseExecutor,
   payment: typeof payments.$inferSelect,
 ): Promise<PaymentAttemptView> {
-  const [order, countRow] = await Promise.all([
-    db.select().from(orders).where(eq(orders.id, payment.orderId)).limit(1),
-    db
-      .select({ count: sql<number>`coalesce(sum(${orderItems.quantity}), 0)::int` })
-      .from(orderItems)
-      .where(eq(orderItems.orderId, payment.orderId)),
-  ]);
+  // A DatabaseExecutor may be a transaction backed by one pg Client. Keep
+  // statements sequential so the same client never executes overlapping queries.
+  const order = await db.select().from(orders).where(eq(orders.id, payment.orderId)).limit(1);
+  const countRow = await db
+    .select({ count: sql<number>`coalesce(sum(${orderItems.quantity}), 0)::int` })
+    .from(orderItems)
+    .where(eq(orderItems.orderId, payment.orderId));
   if (!order[0]) throw new Error("Payment references a missing order");
   return {
     paymentId: payment.id,

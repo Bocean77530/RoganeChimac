@@ -8,27 +8,27 @@ export async function loadOrderLines(
   db: DatabaseExecutor,
   orderId: string,
 ): Promise<PricedLineSnapshot[]> {
-  const [items, modifiers] = await Promise.all([
-    db
-      .select()
-      .from(orderItems)
-      .where(eq(orderItems.orderId, orderId))
-      .orderBy(asc(orderItems.sortOrder)),
-    db
-      .select({
-        orderItemId: orderItemModifiers.orderItemId,
-        groupId: orderItemModifiers.groupCode,
-        groupName: orderItemModifiers.groupName,
-        optionId: orderItemModifiers.optionCode,
-        optionName: orderItemModifiers.optionName,
-        priceDeltaCents: orderItemModifiers.priceDeltaCents,
-        sortOrder: orderItemModifiers.sortOrder,
-      })
-      .from(orderItemModifiers)
-      .innerJoin(orderItems, eq(orderItems.id, orderItemModifiers.orderItemId))
-      .where(eq(orderItems.orderId, orderId))
-      .orderBy(asc(orderItemModifiers.sortOrder)),
-  ]);
+  // These helpers also run inside payment transactions, where pg provides one
+  // Client. Sequential queries avoid overlapping work on that transaction client.
+  const items = await db
+    .select()
+    .from(orderItems)
+    .where(eq(orderItems.orderId, orderId))
+    .orderBy(asc(orderItems.sortOrder));
+  const modifiers = await db
+    .select({
+      orderItemId: orderItemModifiers.orderItemId,
+      groupId: orderItemModifiers.groupCode,
+      groupName: orderItemModifiers.groupName,
+      optionId: orderItemModifiers.optionCode,
+      optionName: orderItemModifiers.optionName,
+      priceDeltaCents: orderItemModifiers.priceDeltaCents,
+      sortOrder: orderItemModifiers.sortOrder,
+    })
+    .from(orderItemModifiers)
+    .innerJoin(orderItems, eq(orderItems.id, orderItemModifiers.orderItemId))
+    .where(eq(orderItems.orderId, orderId))
+    .orderBy(asc(orderItemModifiers.sortOrder));
 
   return items.map((item) => ({
     clientLineId: item.clientLineId,
@@ -66,10 +66,8 @@ export async function loadAdminOrderDetail(
   const order = (await db.select().from(orders).where(eq(orders.id, orderId)).limit(1))[0];
   if (!order) return undefined;
 
-  const [lines, statusEvents] = await Promise.all([
-    loadOrderLines(db, orderId),
-    loadOrderTimeline(db, orderId),
-  ]);
+  const lines = await loadOrderLines(db, orderId);
+  const statusEvents = await loadOrderTimeline(db, orderId);
   return {
     id: order.id,
     orderNumber: order.orderNumber,
