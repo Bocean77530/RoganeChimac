@@ -1,6 +1,5 @@
-import { pathToFileURL } from "node:url";
 import { and, eq } from "drizzle-orm";
-import { closeDatabase, withDatabase } from "./client.server";
+import { withDatabase } from "./client.server";
 import {
   businessHours,
   menuCategories,
@@ -207,15 +206,4 @@ export async function seedDatabase(): Promise<void> {
       }
     });
   });
-}
-
-const entry = process.argv[1];
-if (entry && import.meta.url === pathToFileURL(entry).href) {
-  seedDatabase()
-    .then(() => console.info("Database seed completed"))
-    .catch((error: unknown) => {
-      console.error("Database seed failed", error);
-      process.exitCode = 1;
-    })
-    .finally(() => closeDatabase());
 }
