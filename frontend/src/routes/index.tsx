@@ -250,7 +250,7 @@ function Home() {
                 <a
                   target="_blank"
                   rel="noreferrer"
-                  href={`https://maps.google.com/?q=${encodeURIComponent(restaurant.address.line1 + " " + restaurant.address.suburb)}`}
+                  href={restaurant.maps.shareUrl}
                 >
                   Get Directions
                 </a>
@@ -262,7 +262,7 @@ function Home() {
               title="Map"
               className="h-full w-full"
               loading="lazy"
-              src={`https://www.google.com/maps?q=${encodeURIComponent(restaurant.address.line1 + " " + restaurant.address.suburb)}&output=embed`}
+              src={`https://www.google.com/maps?q=${restaurant.maps.latitude},${restaurant.maps.longitude}&z=${restaurant.maps.zoom}&output=embed`}
             />
           </div>
         </div>

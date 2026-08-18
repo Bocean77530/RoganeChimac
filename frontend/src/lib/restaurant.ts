@@ -15,6 +15,12 @@ export const restaurant = {
     postalCode: "2602",
     addressCountry: "AU",
   },
+  maps: {
+    shareUrl: "https://maps.app.goo.gl/KBVSqPWTD7nQFbMX6",
+    latitude: -35.249337,
+    longitude: 149.1364943,
+    zoom: 18,
+  },
   phone: "+61 2 6262 9219",
   email: null,
   abn: null,
