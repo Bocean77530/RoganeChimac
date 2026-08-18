@@ -1,12 +1,13 @@
 import type { KitchenTicket as KitchenTicketData } from "../../domain/integrations";
 import { groupLineModifiers } from "../../integrations/printing/kitchen-ticket";
+import { restaurant } from "../../lib/restaurant";
 
 export type KitchenTicketProps = {
   ticket: KitchenTicketData;
   timezone?: string;
 };
 
-export function KitchenTicket({ ticket, timezone = "Australia/Melbourne" }: KitchenTicketProps) {
+export function KitchenTicket({ ticket, timezone = restaurant.timezone }: KitchenTicketProps) {
   return (
     <article className="kitchen-ticket" aria-label={`Kitchen ticket ${ticket.order.orderNumber}`}>
       <header className="kitchen-ticket__header">

@@ -227,7 +227,7 @@ function createMockOrders(): AdminOrderView[] {
   return [
     createMockOrder({
       id: "order-st-1042",
-      orderNumber: "ST-1042",
+      orderNumber: "RC-1042",
       status: "paid",
       placedAt: "2026-08-14T09:32:00.000Z",
       requestedFor: "2026-08-14T10:00:00.000Z",
@@ -247,7 +247,7 @@ function createMockOrders(): AdminOrderView[] {
     }),
     createMockOrder({
       id: "order-st-1043",
-      orderNumber: "ST-1043",
+      orderNumber: "RC-1043",
       status: "accepted",
       placedAt: "2026-08-14T09:35:00.000Z",
       requestedFor: "2026-08-14T10:10:00.000Z",
@@ -261,7 +261,7 @@ function createMockOrders(): AdminOrderView[] {
     }),
     createMockOrder({
       id: "order-st-1044",
-      orderNumber: "ST-1044",
+      orderNumber: "RC-1044",
       status: "preparing",
       placedAt: "2026-08-14T09:37:00.000Z",
       requestedFor: "2026-08-14T10:20:00.000Z",
@@ -275,7 +275,7 @@ function createMockOrders(): AdminOrderView[] {
     }),
     createMockOrder({
       id: "order-st-1045",
-      orderNumber: "ST-1045",
+      orderNumber: "RC-1045",
       status: "ready",
       placedAt: "2026-08-14T09:18:00.000Z",
       requestedFor: "2026-08-14T09:50:00.000Z",
@@ -401,7 +401,7 @@ function createMockJobs(): AdminIntegrationJob[] {
       status: "succeeded",
       attemptCount: 1,
       maxAttempts: 6,
-      externalReference: "MOCK-POS-ST-1042",
+      externalReference: "MOCK-POS-RC-1042",
       updatedAt: "2026-08-14T09:32:02.000Z",
     },
     {
@@ -424,7 +424,7 @@ function createMockJobs(): AdminIntegrationJob[] {
       status: "succeeded",
       attemptCount: 1,
       maxAttempts: 6,
-      externalReference: "MOCK-PRINT-ST-1043-COPY-1",
+      externalReference: "MOCK-PRINT-RC-1043-COPY-1",
       updatedAt: "2026-08-14T09:36:00.000Z",
     },
     {

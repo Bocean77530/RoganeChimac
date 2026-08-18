@@ -1,4 +1,4 @@
-# Seoul Table pickup ordering demo
+# Rogane Chimac pickup ordering demo
 
 TanStack Start application demonstrating an Australian restaurant pickup flow with server-side pricing, PostgreSQL order persistence, Stripe Embedded Checkout, public order tracking, a demo kitchen display, and mock POS/printing adapters.
 
@@ -9,6 +9,7 @@ TanStack Start application demonstrating an Australian restaurant pickup flow wi
 - Standard PostgreSQL persistence with Drizzle migrations and seed data.
 - Signed Stripe webhook as the only source of payment success.
 - Private-token confirmation and tracking pages backed by the database.
+- Database-backed public menu with protected add/delete operations in `/admin/menu`.
 - Demo `/admin` KDS with mock data, Mock POS, retry states, and 80mm browser printing.
 
 The Admin/KDS is a presentation surface in this iteration. It is not authenticated and does not yet read production orders, so it must not be exposed as a production operations console. A real restaurant POS and automatic LAN printer also require a provider-specific adapter or an on-premise print bridge.
@@ -27,7 +28,7 @@ Fill `.env.local` with test credentials. Use a random `TRACKING_TOKEN_PEPPER` of
 For a local PostgreSQL database, `DATABASE_URL` can look like:
 
 ```dotenv
-DATABASE_URL="postgresql://postgres:password@127.0.0.1:5432/seoul_table"
+DATABASE_URL="postgresql://postgres:password@127.0.0.1:5432/rogane_chimac"
 ```
 
 Hosted PostgreSQL connection strings normally include `sslmode=require`; copy the provider's complete value rather than rebuilding it by hand.
@@ -84,6 +85,7 @@ PAYMENTS_EXPECT_LIVEMODE=false
 QUOTE_TTL_SECONDS=600
 PENDING_ORDER_TTL_SECONDS=1860
 TRACKING_TOKEN_PEPPER=replace-with-at-least-32-random-characters
+ADMIN_ACCESS_TOKEN=replace-with-at-least-24-random-characters
 ```
 
 `VITE_STRIPE_PUBLISHABLE_KEY` is intentionally public and is passed to the Docker build as a declared build argument. `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `DATABASE_URL`, and `TRACKING_TOKEN_PEPPER` remain runtime-only secrets. Do not enable Railway skipped builds when changing a `VITE_*` value because Vite embeds it in the browser bundle.
@@ -142,8 +144,10 @@ The test script deliberately invokes Vitest through Node while Bun remains the p
 - `/order-confirmation?session_id=...` — webhook-aware payment confirmation
 - `/track-order?t=...` — private database-backed tracking
 - `/admin` — demo KDS
+- `/admin/menu` — PostgreSQL menu management (add/delete/photo upload requires `ADMIN_ACCESS_TOKEN`)
 - `/admin/integrations` — mock integration states
 - `/api/health` — deployment liveness check
+- `/api/menu-images/:imageId` — cacheable public delivery for uploaded dish photos
 
 ## Architecture boundaries
 
@@ -155,3 +159,8 @@ The test script deliberately invokes Vitest through Node while Bun remains the p
 - `src/domain/**` contains provider-neutral contracts.
 
 Browser totals are estimates only. The server reloads canonical menu prices, validates modifiers, promotions, pickup capacity, amount, currency, and payment state before fulfilling an order.
+
+Admin dish photos are resized in the browser and capped at 700 KB before server-side signature
+validation. The compressed image is stored in PostgreSQL, so Railway deployments do not require a
+persistent volume and the same application remains portable to Azure or AWS. For a substantially
+larger multi-venue catalogue, replace this repository boundary with S3-compatible object storage.

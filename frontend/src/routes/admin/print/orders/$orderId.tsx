@@ -15,7 +15,7 @@ export const Route = createFileRoute("/admin/print/orders/$orderId")({
   }),
   head: () => ({
     meta: [
-      { title: "Kitchen Ticket | Seoul Table" },
+      { title: "Kitchen Ticket | Rogane Chimac" },
       { name: "robots", content: "noindex, nofollow" },
     ],
     links: [{ rel: "stylesheet", href: kitchenTicketCss }],

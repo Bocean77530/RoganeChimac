@@ -20,18 +20,18 @@ import type { OrderTotalsSnapshot } from "@/domain/order";
 import { computeTotals, useCart } from "@/lib/cart-store";
 import { formatAUD, restaurant } from "@/lib/restaurant";
 
-const RESTAURANT_SLUG = "seoul-table";
+const RESTAURANT_SLUG = restaurant.slug;
 const TERMS_VERSION = "2026-08-14";
 
 export const Route = createFileRoute("/checkout")({
   head: () => ({
     meta: [
-      { title: "Secure Pickup Checkout | Seoul Table" },
+      { title: "Secure Pickup Checkout | Rogane Chimac" },
       {
         name: "description",
         content: "Choose a pickup time and pay securely with Stripe.",
       },
-      { name: "robots", content: "noindex" },
+      { name: "robots", content: "noindex,nofollow" },
     ],
   }),
   component: CheckoutPage,
@@ -84,8 +84,7 @@ function CheckoutPage() {
   });
 
   const slots = availabilityQuery.data?.slots ?? [];
-  const canOrder =
-    availabilityQuery.data?.orderingEnabled === true && slots.length > 0;
+  const canOrder = availabilityQuery.data?.orderingEnabled === true && slots.length > 0;
 
   if (paymentStage) {
     return (
@@ -94,9 +93,7 @@ function CheckoutPage() {
           <p className="text-xs font-bold uppercase tracking-widest text-primary">
             Order {paymentStage.orderNumber}
           </p>
-          <h1 className="mt-1 font-display text-3xl font-extrabold">
-            Complete secure payment
-          </h1>
+          <h1 className="mt-1 font-display text-3xl font-extrabold">Complete secure payment</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Your pickup slot is held while this Stripe Sandbox checkout is open.
           </p>
@@ -158,11 +155,7 @@ function CheckoutPage() {
   const applyPromo = () => {
     const code = promoInput.trim().toUpperCase();
     setPromoCode(code || null);
-    toast.success(
-      code
-        ? `${code} will be validated before payment`
-        : "Promo code cleared",
-    );
+    toast.success(code ? `${code} will be validated before payment` : "Promo code cleared");
   };
 
   const continueToPayment = async () => {
@@ -239,9 +232,7 @@ function CheckoutPage() {
       });
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Checkout could not be started. Please try again.",
+        error instanceof Error ? error.message : "Checkout could not be started. Please try again.",
       );
     } finally {
       setSubmitting(false);
@@ -295,19 +286,43 @@ function CheckoutPage() {
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <div>
               <Label htmlFor="name">Full name</Label>
-              <Input id="name" autoComplete="name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+              <Input
+                id="name"
+                autoComplete="name"
+                value={form.name}
+                onChange={(event) => setForm({ ...form, name: event.target.value })}
+              />
             </div>
             <div>
               <Label htmlFor="phone">Mobile</Label>
-              <Input id="phone" type="tel" autoComplete="tel" inputMode="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+              <Input
+                id="phone"
+                type="tel"
+                autoComplete="tel"
+                inputMode="tel"
+                value={form.phone}
+                onChange={(event) => setForm({ ...form, phone: event.target.value })}
+              />
             </div>
             <div className="sm:col-span-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" autoComplete="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+              <Input
+                id="email"
+                type="email"
+                autoComplete="email"
+                value={form.email}
+                onChange={(event) => setForm({ ...form, email: event.target.value })}
+              />
             </div>
             <div className="sm:col-span-2">
               <Label htmlFor="notes">Order notes (optional)</Label>
-              <Textarea id="notes" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} maxLength={300} placeholder="Allergies or pickup notes" />
+              <Textarea
+                id="notes"
+                value={form.notes}
+                onChange={(event) => setForm({ ...form, notes: event.target.value })}
+                maxLength={300}
+                placeholder="Allergies or pickup notes"
+              />
             </div>
           </div>
         </section>
@@ -325,9 +340,18 @@ function CheckoutPage() {
         </section>
 
         <label className="flex items-start gap-3 text-sm">
-          <input type="checkbox" checked={terms} onChange={(event) => setTerms(event.target.checked)} className="mt-1 h-4 w-4 accent-primary" />
+          <input
+            type="checkbox"
+            checked={terms}
+            onChange={(event) => setTerms(event.target.checked)}
+            className="mt-1 h-4 w-4 accent-primary"
+          />
           <span>
-            I agree to Seoul Table&apos;s <Link to="/terms" className="text-primary hover:underline">ordering terms</Link> and understand that our kitchen handles common allergens.
+            I agree to Rogane Chimac&apos;s{" "}
+            <Link to="/terms" className="text-primary hover:underline">
+              ordering terms
+            </Link>{" "}
+            and understand that our kitchen handles common allergens.
           </span>
         </label>
       </div>
@@ -339,30 +363,70 @@ function CheckoutPage() {
             <li key={line.lineId} className="flex gap-3">
               <img src={line.image} alt="" className="h-12 w-12 rounded-lg object-cover" />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold">{line.quantity}× {line.name}</p>
-                {line.modifiers.length > 0 && <p className="line-clamp-2 text-xs text-muted-foreground">{line.modifiers.map((modifier) => modifier.name).join(" · ")}</p>}
+                <p className="truncate text-sm font-semibold">
+                  {line.quantity}× {line.name}
+                </p>
+                {line.modifiers.length > 0 && (
+                  <p className="line-clamp-2 text-xs text-muted-foreground">
+                    {line.modifiers.map((modifier) => modifier.name).join(" · ")}
+                  </p>
+                )}
               </div>
               <span className="text-sm font-semibold">
-                {formatAUD((line.basePrice + line.modifiers.reduce((sum, modifier) => sum + modifier.priceDelta, 0)) * line.quantity)}
+                {formatAUD(
+                  (line.basePrice +
+                    line.modifiers.reduce((sum, modifier) => sum + modifier.priceDelta, 0)) *
+                    line.quantity,
+                )}
               </span>
             </li>
           ))}
         </ul>
 
         <div className="mt-4 flex gap-2">
-          <Input placeholder="Promo code" value={promoInput} onChange={(event) => setPromoInput(event.target.value)} />
-          <Button variant="outline" onClick={applyPromo}>Apply</Button>
+          <Input
+            placeholder="Promo code"
+            value={promoInput}
+            onChange={(event) => setPromoInput(event.target.value)}
+          />
+          <Button variant="outline" onClick={applyPromo}>
+            Apply
+          </Button>
         </div>
 
         <div className="mt-4 space-y-1 border-t border-border pt-4 text-sm">
-          <div className="flex justify-between"><span className="text-muted-foreground">Estimated subtotal</span><span>{formatAUD(previewTotals.subtotal)}</span></div>
-          {previewTotals.discount > 0 && <div className="flex justify-between text-green"><span>Estimated discount</span><span>−{formatAUD(previewTotals.discount)}</span></div>}
-          <div className="flex justify-between pt-1 font-display text-xl font-bold"><span>Estimated total</span><span>{formatAUD(previewTotals.total)}</span></div>
-          <p className="pt-2 text-xs text-muted-foreground">The server validates current menu prices, modifiers, promo eligibility and pickup capacity before Stripe opens.</p>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Estimated subtotal</span>
+            <span>{formatAUD(previewTotals.subtotal)}</span>
+          </div>
+          {previewTotals.discount > 0 && (
+            <div className="flex justify-between text-green">
+              <span>Estimated discount</span>
+              <span>−{formatAUD(previewTotals.discount)}</span>
+            </div>
+          )}
+          <div className="flex justify-between pt-1 font-display text-xl font-bold">
+            <span>Estimated total</span>
+            <span>{formatAUD(previewTotals.total)}</span>
+          </div>
+          <p className="pt-2 text-xs text-muted-foreground">
+            The server validates current menu prices, modifiers, promo eligibility and pickup
+            capacity before Stripe opens.
+          </p>
         </div>
 
-        <Button onClick={continueToPayment} disabled={submitting || availabilityQuery.isPending || !canOrder} className="mt-5 h-12 w-full bg-primary text-base font-semibold text-primary-foreground hover:bg-primary-dark">
-          {submitting ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Preparing payment…</span> : "Continue to secure payment"}
+        <Button
+          onClick={continueToPayment}
+          disabled={submitting || availabilityQuery.isPending || !canOrder}
+          className="mt-5 h-12 w-full bg-primary text-base font-semibold text-primary-foreground hover:bg-primary-dark"
+        >
+          {submitting ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" /> Preparing payment…
+            </span>
+          ) : (
+            "Continue to secure payment"
+          )}
         </Button>
       </aside>
     </div>
@@ -373,7 +437,7 @@ class CheckoutError extends Error {}
 
 function formatPickupTime(value: string): string {
   return new Intl.DateTimeFormat("en-AU", {
-    timeZone: "Australia/Melbourne",
+    timeZone: restaurant.timezone,
     weekday: "short",
     day: "numeric",
     month: "short",

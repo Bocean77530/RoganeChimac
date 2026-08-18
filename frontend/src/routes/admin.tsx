@@ -3,7 +3,7 @@ import { AdminShell } from "../components/admin/AdminShell";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
-    meta: [{ title: "Operations | Seoul Table" }, { name: "robots", content: "noindex, nofollow" }],
+    meta: [{ title: "Operations | Rogane Chimac" }, { name: "robots", content: "noindex, nofollow" }],
   }),
   component: AdminLayout,
 });

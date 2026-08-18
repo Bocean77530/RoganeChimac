@@ -47,6 +47,17 @@ export async function seedDatabase(): Promise<void> {
 
       if (!restaurantRow) throw new Error("Failed to seed restaurant");
 
+      // Preserve historical order snapshots while hiding superseded demo data.
+      // The current menu/categories are reactivated by the upserts below.
+      await tx
+        .update(menuItems)
+        .set({ active: false, updatedAt: new Date() })
+        .where(eq(menuItems.restaurantId, restaurantRow.id));
+      await tx
+        .update(menuCategories)
+        .set({ active: false })
+        .where(eq(menuCategories.restaurantId, restaurantRow.id));
+
       for (const hours of businessHoursSeed) {
         await tx
           .insert(businessHours)
@@ -91,6 +102,8 @@ export async function seedDatabase(): Promise<void> {
             soldOut: item.soldOut,
             popular: item.popular,
             chefsPick: item.chefsPick,
+            dietTags: item.dietTags,
+            spiceLevel: item.spiceLevel,
             sortOrder: item.sortOrder,
           })
           .onConflictDoUpdate({
@@ -100,12 +113,13 @@ export async function seedDatabase(): Promise<void> {
               name: item.name,
               koreanName: item.koreanName,
               description: item.description,
-              imageKey: item.imageKey,
               priceCents: item.priceCents,
               active: true,
               soldOut: item.soldOut,
               popular: item.popular,
               chefsPick: item.chefsPick,
+              dietTags: item.dietTags,
+              spiceLevel: item.spiceLevel,
               sortOrder: item.sortOrder,
               updatedAt: new Date(),
             },
@@ -113,6 +127,10 @@ export async function seedDatabase(): Promise<void> {
           .returning({ id: menuItems.id });
 
         if (!itemRow) throw new Error(`Failed to seed menu item ${item.slug}`);
+
+        // Modifier groups are not soft-deletable. Rebuild them so a changed
+        // photographed menu cannot retain obsolete demo choices.
+        await tx.delete(modifierGroups).where(eq(modifierGroups.menuItemId, itemRow.id));
 
         for (const group of item.modifiers) {
           const [groupRow] = await tx

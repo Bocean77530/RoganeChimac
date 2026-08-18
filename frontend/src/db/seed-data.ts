@@ -12,9 +12,9 @@ const dayNumbers: Record<string, number> = {
 };
 
 export const restaurantSeed = {
-  slug: "seoul-table",
+  slug: restaurant.slug,
   name: restaurant.name,
-  timezone: "Australia/Melbourne",
+  timezone: restaurant.timezone,
   currency: "AUD" as const,
   addressLine1: restaurant.address.line1,
   suburb: restaurant.address.suburb,
@@ -28,12 +28,14 @@ export const restaurantSeed = {
   pickupCapacityPerSlot: 8,
 };
 
-export const businessHoursSeed = restaurant.hours.map((hours, sortOrder) => ({
-  dayOfWeek: dayNumbers[hours.day]!,
-  opensAt: hours.open,
-  closesAt: hours.close,
-  sortOrder,
-}));
+export const businessHoursSeed = restaurant.hours.flatMap((hours, daySortOrder) =>
+  hours.periods.map((period, periodSortOrder) => ({
+    dayOfWeek: dayNumbers[hours.day]!,
+    opensAt: period.open,
+    closesAt: period.close,
+    sortOrder: daySortOrder * 10 + periodSortOrder,
+  })),
+);
 
 // "Popular" is a derived collection rather than a real menu category.
 export const categorySeed = categories
@@ -56,6 +58,8 @@ export const menuSeed = menu.map((item, sortOrder) => ({
   soldOut: item.soldOut ?? false,
   popular: item.popular ?? false,
   chefsPick: item.chefsPick ?? false,
+  dietTags: item.diet ?? [],
+  spiceLevel: item.spice ?? 0,
   sortOrder,
   modifiers: (item.modifiers ?? []).map((group, groupSortOrder) => ({
     code: group.id,
@@ -73,7 +77,7 @@ export const menuSeed = menu.map((item, sortOrder) => ({
 }));
 
 export const promotionSeed = {
-  code: "SEOUL10",
+  code: "ROGANE10",
   discountType: "percent" as const,
   value: 10,
   minimumSubtotalCents: 2_000,

@@ -62,7 +62,10 @@ export function ProductModal({ item, onClose }: { item: MenuItem | null; onClose
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 p-0 md:p-6 animate-fade-up" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 p-0 md:p-6 animate-fade-up"
+      onClick={onClose}
+    >
       <div
         role="dialog"
         aria-modal="true"
@@ -71,8 +74,19 @@ export function ProductModal({ item, onClose }: { item: MenuItem | null; onClose
         onClick={(e) => e.stopPropagation()}
       >
         <div className="relative">
-          <img src={item.image} alt={item.name} className="h-56 md:h-72 w-full object-cover" />
-          <button aria-label="Close" onClick={onClose} className="absolute top-3 right-3 grid h-10 w-10 place-items-center rounded-full bg-background/90 hover:bg-background">
+          <img
+            src={item.image}
+            alt={`${item.name} at Rogane Chimac`}
+            width={1200}
+            height={800}
+            decoding="async"
+            className="h-56 md:h-72 w-full object-cover"
+          />
+          <button
+            aria-label="Close"
+            onClick={onClose}
+            className="absolute top-3 right-3 grid h-10 w-10 place-items-center rounded-full bg-background/90 hover:bg-background"
+          >
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -99,8 +113,16 @@ export function ProductModal({ item, onClose }: { item: MenuItem | null; onClose
               <fieldset key={group.id} className="mt-6">
                 <legend className="font-display font-bold flex items-center gap-2">
                   {group.name}
-                  {min > 0 && <span className="text-xs font-medium text-primary uppercase tracking-wide">Required</span>}
-                  {max > 1 && <span className="text-xs font-normal text-muted-foreground">Choose up to {max}</span>}
+                  {min > 0 && (
+                    <span className="text-xs font-medium text-primary uppercase tracking-wide">
+                      Required
+                    </span>
+                  )}
+                  {max > 1 && (
+                    <span className="text-xs font-normal text-muted-foreground">
+                      Choose up to {max}
+                    </span>
+                  )}
                 </legend>
                 <div className="mt-2 grid gap-2">
                   {group.options.map((opt) => {
@@ -120,7 +142,9 @@ export function ProductModal({ item, onClose }: { item: MenuItem | null; onClose
                           />
                           <span className="text-sm font-medium">{opt.name}</span>
                         </span>
-                        {opt.priceDelta ? <span className="text-sm font-medium">+{formatAUD(opt.priceDelta)}</span> : null}
+                        {opt.priceDelta ? (
+                          <span className="text-sm font-medium">+{formatAUD(opt.priceDelta)}</span>
+                        ) : null}
                       </label>
                     );
                   })}
@@ -130,26 +154,47 @@ export function ProductModal({ item, onClose }: { item: MenuItem | null; onClose
           })}
 
           <div className="mt-6">
-            <label className="font-display font-bold" htmlFor="notes">Special instructions</label>
-            <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. no coriander, extra sauce on the side" maxLength={300} className="mt-2" />
+            <label className="font-display font-bold" htmlFor="notes">
+              Special instructions
+            </label>
+            <Textarea
+              id="notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="e.g. no coriander, extra sauce on the side"
+              maxLength={300}
+              className="mt-2"
+            />
           </div>
 
           <p className="mt-6 text-xs text-muted-foreground">
-            Please inform our team of any allergies before ordering. Our kitchen handles common allergens and cannot guarantee any item is allergen-free.
+            Please inform our team of any allergies before ordering. Our kitchen handles common
+            allergens and cannot guarantee any item is allergen-free.
           </p>
         </div>
 
         <div className="border-t border-border bg-card px-5 py-4 flex items-center gap-3">
           <div className="flex items-center rounded-full border border-border">
-            <button aria-label="Decrease quantity" onClick={() => setQty((q) => Math.max(1, q - 1))} className="grid h-11 w-11 place-items-center rounded-full hover:bg-accent">
+            <button
+              aria-label="Decrease quantity"
+              onClick={() => setQty((q) => Math.max(1, q - 1))}
+              className="grid h-11 w-11 place-items-center rounded-full hover:bg-accent"
+            >
               <Minus className="h-4 w-4" />
             </button>
             <span className="w-8 text-center font-semibold">{qty}</span>
-            <button aria-label="Increase quantity" onClick={() => setQty((q) => Math.min(20, q + 1))} className="grid h-11 w-11 place-items-center rounded-full hover:bg-accent">
+            <button
+              aria-label="Increase quantity"
+              onClick={() => setQty((q) => Math.min(20, q + 1))}
+              className="grid h-11 w-11 place-items-center rounded-full hover:bg-accent"
+            >
               <Plus className="h-4 w-4" />
             </button>
           </div>
-          <Button onClick={submit} className="flex-1 h-12 bg-primary hover:bg-primary-dark text-primary-foreground font-semibold">
+          <Button
+            onClick={submit}
+            className="flex-1 h-12 bg-primary hover:bg-primary-dark text-primary-foreground font-semibold"
+          >
             Add to cart · {formatAUD(itemTotal)}
           </Button>
         </div>

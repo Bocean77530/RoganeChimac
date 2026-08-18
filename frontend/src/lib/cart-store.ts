@@ -47,7 +47,7 @@ export const useCart = create<State>()(
       setPromoCode: (v) => set({ promoCode: v }),
     }),
     {
-      name: "seoultable-cart-v1",
+      name: "rogane-chimac-cart-v1",
       version: 2,
       migrate: (persisted) => {
         const previous = persisted as Partial<State>;
@@ -73,7 +73,7 @@ export function computeTotals(state: Pick<State, "lines" | "promoCode">): Totals
   const itemCount = state.lines.reduce((s, l) => s + l.quantity, 0);
 
   let discount = 0;
-  if (state.promoCode?.toUpperCase() === "SEOUL10" && subtotal >= 2000) {
+  if (state.promoCode?.toUpperCase() === "ROGANE10" && subtotal >= 2000) {
     discount = Math.round(subtotal * 0.1);
   }
 

@@ -53,6 +53,11 @@ export const menuItems = pgTable(
     soldOut: boolean("sold_out").notNull().default(false),
     popular: boolean("popular").notNull().default(false),
     chefsPick: boolean("chefs_pick").notNull().default(false),
+    dietTags: text("diet_tags")
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
+    spiceLevel: smallint("spice_level").notNull().default(0),
     sortOrder: integer("sort_order").notNull().default(0),
     revision: integer("revision").notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
@@ -62,7 +67,32 @@ export const menuItems = pgTable(
     uniqueIndex("menu_items_restaurant_slug_uidx").on(table.restaurantId, table.slug),
     index("menu_items_category_display_idx").on(table.categoryId, table.active, table.sortOrder),
     check("menu_items_price_chk", sql`${table.priceCents} >= 0`),
+    check("menu_items_spice_chk", sql`${table.spiceLevel} between 0 and 3`),
     check("menu_items_revision_chk", sql`${table.revision} > 0`),
+  ],
+);
+
+export const menuImages = pgTable(
+  "menu_images",
+  {
+    id: uuid("id").primaryKey(),
+    menuItemId: uuid("menu_item_id")
+      .notNull()
+      .references(() => menuItems.id, { onDelete: "cascade" }),
+    contentType: varchar("content_type", { length: 32 }).notNull(),
+    dataBase64: text("data_base64").notNull(),
+    byteSize: integer("byte_size").notNull(),
+    sha256: varchar("sha256", { length: 64 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("menu_images_item_uidx").on(table.menuItemId),
+    check("menu_images_size_chk", sql`${table.byteSize} between 1 and 700000`),
+    check(
+      "menu_images_content_type_chk",
+      sql`${table.contentType} in ('image/jpeg', 'image/png', 'image/webp')`,
+    ),
   ],
 );
 

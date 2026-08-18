@@ -12,8 +12,8 @@ export const Route = createFileRoute("/track-order")({
   validateSearch: z.object({ t: z.string().optional() }),
   head: () => ({
     meta: [
-      { title: "Track Pickup Order | Seoul Table" },
-      { name: "robots", content: "noindex" },
+      { title: "Track Pickup Order | Rogane Chimac" },
+      { name: "robots", content: "noindex,nofollow" },
     ],
   }),
   component: TrackOrder,
@@ -56,7 +56,9 @@ function TrackOrder() {
   });
 
   if (!trackingToken) {
-    return <TrackingUnavailable message="Open the private tracking link from your confirmation page." />;
+    return (
+      <TrackingUnavailable message="Open the private tracking link from your confirmation page." />
+    );
   }
 
   if (orderQuery.isPending) {
@@ -93,14 +95,16 @@ function TrackOrder() {
         {statusHeading(order.status)}
       </h1>
       <p className="mt-2 flex items-center gap-2 text-muted-foreground">
-        <Clock className="h-4 w-4" /> Pickup {formatPickupTime(order.pickupAt)} at {restaurant.address.line1}
+        <Clock className="h-4 w-4" /> Pickup {formatPickupTime(order.pickupAt)} at{" "}
+        {restaurant.address.line1}
       </p>
 
       {terminalProblem && (
         <div className="mt-6 flex gap-3 rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm">
           <AlertCircle className="h-5 w-5 shrink-0 text-destructive" />
           <p>
-            This order is {order.status}. Please call the restaurant before travelling to collect it.
+            This order is {order.status}. Please call the restaurant before travelling to collect
+            it.
           </p>
         </div>
       )}
@@ -174,7 +178,7 @@ function statusHeading(status: OrderStatus): string {
 
 function formatPickupTime(value: string): string {
   return new Intl.DateTimeFormat("en-AU", {
-    timeZone: "Australia/Melbourne",
+    timeZone: restaurant.timezone,
     weekday: "short",
     day: "numeric",
     month: "short",

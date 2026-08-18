@@ -11,10 +11,13 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TrackOrderRouteImport } from './routes/track-order'
 import { Route as TermsRouteImport } from './routes/terms'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as OrderConfirmationRouteImport } from './routes/order-confirmation'
 import { Route as OrderRouteImport } from './routes/order'
 import { Route as MenuRouteImport } from './routes/menu'
+import { Route as KoreanFriedChickenDicksonRouteImport } from './routes/korean-fried-chicken-dickson'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as AdminRouteImport } from './routes/admin'
@@ -22,8 +25,10 @@ import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as AdminMenuRouteImport } from './routes/admin/menu'
 import { Route as AdminIntegrationsRouteImport } from './routes/admin/integrations'
 import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe/webhook'
+import { Route as ApiMenuImagesImageIdRouteImport } from './routes/api/menu-images/$imageId'
 import { Route as AdminOrdersOrderIdRouteImport } from './routes/admin/orders/$orderId'
 import { Route as AdminPrintOrdersOrderIdRouteImport } from './routes/admin/print/orders/$orderId'
 
@@ -35,6 +40,16 @@ const TrackOrderRoute = TrackOrderRouteImport.update({
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
+  id: '/robots.txt',
+  path: '/robots.txt',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrivacyRoute = PrivacyRouteImport.update({
@@ -57,6 +72,12 @@ const MenuRoute = MenuRouteImport.update({
   path: '/menu',
   getParentRoute: () => rootRouteImport,
 } as any)
+const KoreanFriedChickenDicksonRoute =
+  KoreanFriedChickenDicksonRouteImport.update({
+    id: '/korean-fried-chicken-dickson',
+    path: '/korean-fried-chicken-dickson',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ContactRoute = ContactRouteImport.update({
   id: '/contact',
   path: '/contact',
@@ -92,6 +113,11 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminMenuRoute = AdminMenuRouteImport.update({
+  id: '/menu',
+  path: '/menu',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminIntegrationsRoute = AdminIntegrationsRouteImport.update({
   id: '/integrations',
   path: '/integrations',
@@ -100,6 +126,11 @@ const AdminIntegrationsRoute = AdminIntegrationsRouteImport.update({
 const ApiStripeWebhookRoute = ApiStripeWebhookRouteImport.update({
   id: '/api/stripe/webhook',
   path: '/api/stripe/webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMenuImagesImageIdRoute = ApiMenuImagesImageIdRouteImport.update({
+  id: '/api/menu-images/$imageId',
+  path: '/api/menu-images/$imageId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminOrdersOrderIdRoute = AdminOrdersOrderIdRouteImport.update({
@@ -119,16 +150,21 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteWithChildren
   '/checkout': typeof CheckoutRoute
   '/contact': typeof ContactRoute
+  '/korean-fried-chicken-dickson': typeof KoreanFriedChickenDicksonRoute
   '/menu': typeof MenuRoute
   '/order': typeof OrderRoute
   '/order-confirmation': typeof OrderConfirmationRoute
   '/privacy': typeof PrivacyRoute
+  '/robots.txt': typeof RobotsDottxtRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/terms': typeof TermsRoute
   '/track-order': typeof TrackOrderRoute
   '/admin/integrations': typeof AdminIntegrationsRoute
+  '/admin/menu': typeof AdminMenuRoute
   '/api/health': typeof ApiHealthRoute
   '/admin/': typeof AdminIndexRoute
   '/admin/orders/$orderId': typeof AdminOrdersOrderIdRoute
+  '/api/menu-images/$imageId': typeof ApiMenuImagesImageIdRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
   '/admin/print/orders/$orderId': typeof AdminPrintOrdersOrderIdRoute
 }
@@ -137,16 +173,21 @@ export interface FileRoutesByTo {
   '/about': typeof AboutRoute
   '/checkout': typeof CheckoutRoute
   '/contact': typeof ContactRoute
+  '/korean-fried-chicken-dickson': typeof KoreanFriedChickenDicksonRoute
   '/menu': typeof MenuRoute
   '/order': typeof OrderRoute
   '/order-confirmation': typeof OrderConfirmationRoute
   '/privacy': typeof PrivacyRoute
+  '/robots.txt': typeof RobotsDottxtRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/terms': typeof TermsRoute
   '/track-order': typeof TrackOrderRoute
   '/admin/integrations': typeof AdminIntegrationsRoute
+  '/admin/menu': typeof AdminMenuRoute
   '/api/health': typeof ApiHealthRoute
   '/admin': typeof AdminIndexRoute
   '/admin/orders/$orderId': typeof AdminOrdersOrderIdRoute
+  '/api/menu-images/$imageId': typeof ApiMenuImagesImageIdRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
   '/admin/print/orders/$orderId': typeof AdminPrintOrdersOrderIdRoute
 }
@@ -157,16 +198,21 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/checkout': typeof CheckoutRoute
   '/contact': typeof ContactRoute
+  '/korean-fried-chicken-dickson': typeof KoreanFriedChickenDicksonRoute
   '/menu': typeof MenuRoute
   '/order': typeof OrderRoute
   '/order-confirmation': typeof OrderConfirmationRoute
   '/privacy': typeof PrivacyRoute
+  '/robots.txt': typeof RobotsDottxtRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/terms': typeof TermsRoute
   '/track-order': typeof TrackOrderRoute
   '/admin/integrations': typeof AdminIntegrationsRoute
+  '/admin/menu': typeof AdminMenuRoute
   '/api/health': typeof ApiHealthRoute
   '/admin/': typeof AdminIndexRoute
   '/admin/orders/$orderId': typeof AdminOrdersOrderIdRoute
+  '/api/menu-images/$imageId': typeof ApiMenuImagesImageIdRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
   '/admin/print/orders/$orderId': typeof AdminPrintOrdersOrderIdRoute
 }
@@ -178,16 +224,21 @@ export interface FileRouteTypes {
     | '/admin'
     | '/checkout'
     | '/contact'
+    | '/korean-fried-chicken-dickson'
     | '/menu'
     | '/order'
     | '/order-confirmation'
     | '/privacy'
+    | '/robots.txt'
+    | '/sitemap.xml'
     | '/terms'
     | '/track-order'
     | '/admin/integrations'
+    | '/admin/menu'
     | '/api/health'
     | '/admin/'
     | '/admin/orders/$orderId'
+    | '/api/menu-images/$imageId'
     | '/api/stripe/webhook'
     | '/admin/print/orders/$orderId'
   fileRoutesByTo: FileRoutesByTo
@@ -196,16 +247,21 @@ export interface FileRouteTypes {
     | '/about'
     | '/checkout'
     | '/contact'
+    | '/korean-fried-chicken-dickson'
     | '/menu'
     | '/order'
     | '/order-confirmation'
     | '/privacy'
+    | '/robots.txt'
+    | '/sitemap.xml'
     | '/terms'
     | '/track-order'
     | '/admin/integrations'
+    | '/admin/menu'
     | '/api/health'
     | '/admin'
     | '/admin/orders/$orderId'
+    | '/api/menu-images/$imageId'
     | '/api/stripe/webhook'
     | '/admin/print/orders/$orderId'
   id:
@@ -215,16 +271,21 @@ export interface FileRouteTypes {
     | '/admin'
     | '/checkout'
     | '/contact'
+    | '/korean-fried-chicken-dickson'
     | '/menu'
     | '/order'
     | '/order-confirmation'
     | '/privacy'
+    | '/robots.txt'
+    | '/sitemap.xml'
     | '/terms'
     | '/track-order'
     | '/admin/integrations'
+    | '/admin/menu'
     | '/api/health'
     | '/admin/'
     | '/admin/orders/$orderId'
+    | '/api/menu-images/$imageId'
     | '/api/stripe/webhook'
     | '/admin/print/orders/$orderId'
   fileRoutesById: FileRoutesById
@@ -235,13 +296,17 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRouteWithChildren
   CheckoutRoute: typeof CheckoutRoute
   ContactRoute: typeof ContactRoute
+  KoreanFriedChickenDicksonRoute: typeof KoreanFriedChickenDicksonRoute
   MenuRoute: typeof MenuRoute
   OrderRoute: typeof OrderRoute
   OrderConfirmationRoute: typeof OrderConfirmationRoute
   PrivacyRoute: typeof PrivacyRoute
+  RobotsDottxtRoute: typeof RobotsDottxtRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TermsRoute: typeof TermsRoute
   TrackOrderRoute: typeof TrackOrderRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  ApiMenuImagesImageIdRoute: typeof ApiMenuImagesImageIdRoute
   ApiStripeWebhookRoute: typeof ApiStripeWebhookRoute
 }
 
@@ -259,6 +324,20 @@ declare module '@tanstack/react-router' {
       path: '/terms'
       fullPath: '/terms'
       preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/robots.txt': {
+      id: '/robots.txt'
+      path: '/robots.txt'
+      fullPath: '/robots.txt'
+      preLoaderRoute: typeof RobotsDottxtRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/privacy': {
@@ -287,6 +366,13 @@ declare module '@tanstack/react-router' {
       path: '/menu'
       fullPath: '/menu'
       preLoaderRoute: typeof MenuRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/korean-fried-chicken-dickson': {
+      id: '/korean-fried-chicken-dickson'
+      path: '/korean-fried-chicken-dickson'
+      fullPath: '/korean-fried-chicken-dickson'
+      preLoaderRoute: typeof KoreanFriedChickenDicksonRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/contact': {
@@ -338,6 +424,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/menu': {
+      id: '/admin/menu'
+      path: '/menu'
+      fullPath: '/admin/menu'
+      preLoaderRoute: typeof AdminMenuRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/integrations': {
       id: '/admin/integrations'
       path: '/integrations'
@@ -350,6 +443,13 @@ declare module '@tanstack/react-router' {
       path: '/api/stripe/webhook'
       fullPath: '/api/stripe/webhook'
       preLoaderRoute: typeof ApiStripeWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/menu-images/$imageId': {
+      id: '/api/menu-images/$imageId'
+      path: '/api/menu-images/$imageId'
+      fullPath: '/api/menu-images/$imageId'
+      preLoaderRoute: typeof ApiMenuImagesImageIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/orders/$orderId': {
@@ -371,6 +471,7 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteChildren {
   AdminIntegrationsRoute: typeof AdminIntegrationsRoute
+  AdminMenuRoute: typeof AdminMenuRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminOrdersOrderIdRoute: typeof AdminOrdersOrderIdRoute
   AdminPrintOrdersOrderIdRoute: typeof AdminPrintOrdersOrderIdRoute
@@ -378,6 +479,7 @@ interface AdminRouteChildren {
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminIntegrationsRoute: AdminIntegrationsRoute,
+  AdminMenuRoute: AdminMenuRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminOrdersOrderIdRoute: AdminOrdersOrderIdRoute,
   AdminPrintOrdersOrderIdRoute: AdminPrintOrdersOrderIdRoute,
@@ -391,13 +493,17 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRouteWithChildren,
   CheckoutRoute: CheckoutRoute,
   ContactRoute: ContactRoute,
+  KoreanFriedChickenDicksonRoute: KoreanFriedChickenDicksonRoute,
   MenuRoute: MenuRoute,
   OrderRoute: OrderRoute,
   OrderConfirmationRoute: OrderConfirmationRoute,
   PrivacyRoute: PrivacyRoute,
+  RobotsDottxtRoute: RobotsDottxtRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
   TermsRoute: TermsRoute,
   TrackOrderRoute: TrackOrderRoute,
   ApiHealthRoute: ApiHealthRoute,
+  ApiMenuImagesImageIdRoute: ApiMenuImagesImageIdRoute,
   ApiStripeWebhookRoute: ApiStripeWebhookRoute,
 }
 export const routeTree = rootRouteImport

@@ -25,7 +25,7 @@ export function Header() {
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
       <div className="container-page flex h-16 items-center gap-3 md:h-20">
         <Link to="/" className="flex items-center gap-2 shrink-0" aria-label={restaurant.name}>
-          <span className="grid h-9 w-9 place-items-center rounded-full bg-primary text-primary-foreground font-display text-lg font-bold">S</span>
+          <span className="grid h-9 w-9 place-items-center rounded-full bg-primary text-primary-foreground font-display text-lg font-bold">R</span>
           <span className="font-display text-lg md:text-xl font-bold tracking-tight">
             {restaurant.name}
           </span>

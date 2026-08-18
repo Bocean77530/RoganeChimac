@@ -1,15 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { restaurant } from "@/lib/restaurant";
+import { canonicalLink, pageSeoMeta } from "@/lib/seo";
 import hero from "@/assets/hero-korean.jpg";
 
 export const Route = createFileRoute("/about")({
   head: () => ({
-    meta: [
-      { title: "About | Seoul Table" },
-      { name: "description", content: "The story behind Seoul Table — modern Korean cooking, shared tables, and honest ingredients in Melbourne." },
-      { property: "og:title", content: "About Seoul Table" },
-      { property: "og:description", content: "Modern Korean cooking with traditional heart." },
-    ],
+    meta: pageSeoMeta({
+      title: "About Rogane Chimac | Korean Restaurant in Dickson",
+      description:
+        "Learn about Rogane Chimac, a Korean restaurant in Dickson, Canberra serving Korean favourites for lunch, dinner and pickup.",
+      path: "/about",
+      imagePath: hero,
+    }),
+    links: canonicalLink("/about"),
   }),
   component: About,
 });
@@ -18,20 +21,32 @@ function About() {
   return (
     <div className="container-page py-14">
       <p className="text-xs uppercase tracking-widest text-primary font-bold">Our story</p>
-      <h1 className="mt-1 font-display text-4xl md:text-6xl font-extrabold">A Korean table, shared.</h1>
+      <h1 className="mt-1 font-display text-4xl md:text-6xl font-extrabold">
+        Rogane Chimac in Dickson
+      </h1>
       <div className="mt-8 grid gap-8 md:grid-cols-2 items-center">
         <div className="prose prose-lg text-foreground max-w-none">
           <p>
-            {restaurant.name} began with a simple idea: bring the food we grew up eating — sizzling barbecue, warming stews, and lively street food — to a modern Melbourne dining room and to your door.
+            {restaurant.name} is a Korean restaurant in Dickson, Canberra, serving lunch and dinner
+            from Dickson Plaza.
           </p>
           <p>
-            Every dish starts with quality ingredients, traditional technique, and a strong opinion. We ferment our own kimchi, marinate our meats overnight, and double-fry our chicken until it shatters at first bite.
+            Browse the menu online, choose a pickup time and pay securely before collecting your
+            order from the restaurant.
           </p>
           <p>
-            Come in for lunch, take it home for dinner, or share a big set with friends. The best Korean meals are always meant to be shared.
+            The restaurant is family-friendly and offers takeaway. Public-holiday trading hours may
+            vary, so call ahead when planning a visit.
           </p>
         </div>
-        <img src={hero} alt="Korean feast" className="rounded-3xl aspect-square object-cover shadow-lift" />
+        <img
+          src={hero}
+          alt="Korean food at Rogane Chimac restaurant in Dickson"
+          width={1600}
+          height={1200}
+          decoding="async"
+          className="rounded-3xl aspect-square object-cover shadow-lift"
+        />
       </div>
     </div>
   );

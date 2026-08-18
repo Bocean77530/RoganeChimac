@@ -1,13 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import {
-  AlertCircle,
-  CheckCircle2,
-  Clock,
-  Loader2,
-  MapPin,
-  Receipt,
-} from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, Loader2, MapPin, Receipt } from "lucide-react";
 import { useEffect } from "react";
 import { z } from "zod";
 
@@ -20,8 +13,8 @@ export const Route = createFileRoute("/order-confirmation")({
   validateSearch: z.object({ session_id: z.string().optional() }),
   head: () => ({
     meta: [
-      { title: "Order Status | Seoul Table" },
-      { name: "robots", content: "noindex" },
+      { title: "Order Status | Rogane Chimac" },
+      { name: "robots", content: "noindex,nofollow" },
     ],
   }),
   component: Confirmation,
@@ -42,16 +35,13 @@ function Confirmation() {
     },
     refetchInterval: (query) => {
       const paymentStatus = query.state.data?.paymentStatus;
-      return paymentStatus === "pending" || paymentStatus === "unpaid"
-        ? 1_500
-        : false;
+      return paymentStatus === "pending" || paymentStatus === "unpaid" ? 1_500 : false;
     },
   });
 
   const order = orderQuery.data;
   const paymentConfirmed =
-    order?.paymentStatus === "paid" ||
-    order?.paymentStatus === "partially_refunded";
+    order?.paymentStatus === "paid" || order?.paymentStatus === "partially_refunded";
 
   useEffect(() => {
     if (paymentConfirmed) clearCart();
@@ -77,8 +67,7 @@ function Confirmation() {
     );
   }
 
-  const isVerifying =
-    order.paymentStatus === "pending" || order.paymentStatus === "unpaid";
+  const isVerifying = order.paymentStatus === "pending" || order.paymentStatus === "unpaid";
   const needsAttention =
     order.status === "expired" ||
     order.status === "cancelled" ||
@@ -109,18 +98,14 @@ function Confirmation() {
 
         <div className="mt-6 grid gap-3 sm:grid-cols-3">
           <div className="rounded-2xl border border-border bg-background p-4">
-            <p className="text-xs uppercase tracking-widest text-muted-foreground">
-              Order number
-            </p>
+            <p className="text-xs uppercase tracking-widest text-muted-foreground">Order number</p>
             <p className="font-display text-xl font-bold">{order.orderNumber}</p>
           </div>
           <div className="rounded-2xl border border-border bg-background p-4">
             <p className="flex items-center gap-1 text-xs uppercase tracking-widest text-muted-foreground">
               <Clock className="h-3 w-3" /> Pickup time
             </p>
-            <p className="font-display text-base font-bold">
-              {formatPickupTime(order.pickupAt)}
-            </p>
+            <p className="font-display text-base font-bold">{formatPickupTime(order.pickupAt)}</p>
           </div>
           <div className="rounded-2xl border border-border bg-background p-4">
             <p className="flex items-center gap-1 text-xs uppercase tracking-widest text-muted-foreground">
@@ -136,15 +121,13 @@ function Confirmation() {
           </h2>
           <ul className="mt-3 divide-y divide-border">
             {order.lines.map((line) => (
-              <li
-                key={line.clientLineId}
-                className="flex justify-between gap-3 py-2 text-sm"
-              >
+              <li key={line.clientLineId} className="flex justify-between gap-3 py-2 text-sm">
                 <span>
                   <span className="font-semibold">{line.quantity}×</span> {line.name}
                   {line.modifiers.length > 0 && (
                     <span className="text-muted-foreground">
-                      {" "}— {line.modifiers.map((modifier) => modifier.optionName).join(", ")}
+                      {" "}
+                      — {line.modifiers.map((modifier) => modifier.optionName).join(", ")}
                     </span>
                   )}
                 </span>
@@ -191,7 +174,8 @@ function VerifyingPayment() {
       <Loader2 className="mx-auto h-10 w-10 animate-spin text-primary" />
       <h1 className="mt-5 font-display text-3xl font-bold">Verifying payment</h1>
       <p className="mt-2 text-muted-foreground">
-        Stripe has returned you to the restaurant. We are waiting for the signed payment confirmation.
+        Stripe has returned you to the restaurant. We are waiting for the signed payment
+        confirmation.
       </p>
     </div>
   );
@@ -219,11 +203,7 @@ function confirmationHeading(status: string, paymentStatus: string): string {
   return "Thanks — payment confirmed!";
 }
 
-function confirmationMessage(
-  status: string,
-  paymentStatus: string,
-  maskedEmail: string,
-): string {
+function confirmationMessage(status: string, paymentStatus: string, maskedEmail: string): string {
   if ((status === "expired" || status === "cancelled") && paymentStatus === "paid") {
     return `Payment arrived after this order closed. Please contact the restaurant and quote your order number. Receipt email: ${maskedEmail}.`;
   }
@@ -231,7 +211,8 @@ function confirmationMessage(
     return "The pickup slot was released. Your card has not been confirmed for kitchen fulfilment.";
   }
   if (paymentStatus === "refunded") return "Stripe has recorded a refund for this order.";
-  if (paymentStatus === "failed") return "No kitchen order was created. Please return to the menu and try again.";
+  if (paymentStatus === "failed")
+    return "No kitchen order was created. Please return to the menu and try again.";
   if (paymentStatus === "pending" || paymentStatus === "unpaid") {
     return "Do not close this page. The status will update automatically when the signed Stripe webhook arrives.";
   }
@@ -240,7 +221,7 @@ function confirmationMessage(
 
 function formatPickupTime(value: string): string {
   return new Intl.DateTimeFormat("en-AU", {
-    timeZone: "Australia/Melbourne",
+    timeZone: restaurant.timezone,
     weekday: "short",
     day: "numeric",
     month: "short",

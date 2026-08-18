@@ -1,29 +1,72 @@
 // Central restaurant configuration. Edit here to change branding & business info.
 export const restaurant = {
-  name: "Seoul Table",
-  tagline: "Bold Korean Flavours, Made Fresh",
+  slug: "rogane-chimac",
+  name: "Rogane Chimac",
+  tagline: "Korean favourites in the heart of Dickson",
   description:
-    "Classic Korean comfort food, sizzling barbecue, crispy fried chicken and street-food favourites, prepared fresh for pickup.",
+    "A Korean restaurant in Dickson serving Korean fried chicken, bibimbap, noodles, hot pots and Korean comfort food for lunch, dinner and pickup.",
   address: {
-    line1: "Shop 4, 128 Little Collins Street",
-    suburb: "Melbourne VIC 3000",
+    line1: "Dickson Plaza, Shop 5/28 Challis Street, Woolley Street",
+    suburb: "Dickson ACT 2602",
     country: "Australia",
+    streetAddress: "Dickson Plaza, Shop 5/28 Challis Street, Woolley Street",
+    addressLocality: "Dickson",
+    addressRegion: "ACT",
+    postalCode: "2602",
+    addressCountry: "AU",
   },
-  phone: "(03) 9000 1234",
-  email: "hello@seoultable.com.au",
-  abn: "12 345 678 910",
+  phone: "+61 2 6262 9219",
+  email: null,
+  abn: null,
   socials: {
-    instagram: "https://instagram.com/seoultable",
-    facebook: "https://facebook.com/seoultable",
+    instagram: null,
+    facebook: "https://m.facebook.com/roganechimac/",
   },
+  timezone: "Australia/Sydney",
   hours: [
-    { day: "Monday", open: "11:30", close: "21:30" },
-    { day: "Tuesday", open: "11:30", close: "21:30" },
-    { day: "Wednesday", open: "11:30", close: "21:30" },
-    { day: "Thursday", open: "11:30", close: "22:00" },
-    { day: "Friday", open: "11:30", close: "22:30" },
-    { day: "Saturday", open: "12:00", close: "22:30" },
-    { day: "Sunday", open: "12:00", close: "21:00" },
+    {
+      day: "Monday",
+      periods: [
+        { open: "11:00", close: "14:00" },
+        { open: "16:30", close: "20:30" },
+      ],
+    },
+    {
+      day: "Tuesday",
+      periods: [
+        { open: "11:00", close: "14:00" },
+        { open: "16:30", close: "20:30" },
+      ],
+    },
+    {
+      day: "Wednesday",
+      periods: [
+        { open: "11:00", close: "14:00" },
+        { open: "16:30", close: "20:30" },
+      ],
+    },
+    {
+      day: "Thursday",
+      periods: [
+        { open: "11:00", close: "14:00" },
+        { open: "16:30", close: "20:30" },
+      ],
+    },
+    {
+      day: "Friday",
+      periods: [
+        { open: "11:00", close: "14:00" },
+        { open: "16:30", close: "20:30" },
+      ],
+    },
+    {
+      day: "Saturday",
+      periods: [
+        { open: "11:00", close: "14:00" },
+        { open: "16:30", close: "20:30" },
+      ],
+    },
+    { day: "Sunday", periods: [] },
   ],
   ordering: {
     pickupPrepMinutes: 20,
@@ -32,7 +75,7 @@ export const restaurant = {
 
 export function isOpenNow(now = new Date()): boolean {
   const parts = new Intl.DateTimeFormat("en-AU", {
-    timeZone: "Australia/Melbourne",
+    timeZone: restaurant.timezone,
     weekday: "long",
     hour: "2-digit",
     minute: "2-digit",
@@ -41,12 +84,21 @@ export function isOpenNow(now = new Date()): boolean {
   const weekday = parts.find((part) => part.type === "weekday")?.value;
   const day = restaurant.hours.find((hours) => hours.day === weekday);
   if (!day) return false;
-  const [oh, om] = day.open.split(":").map(Number);
-  const [ch, cm] = day.close.split(":").map(Number);
   const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
   const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
   const mins = hour * 60 + minute;
-  return mins >= oh * 60 + om && mins <= ch * 60 + cm;
+  return day.periods.some((period) => {
+    const [oh, om] = period.open.split(":").map(Number);
+    const [ch, cm] = period.close.split(":").map(Number);
+    return mins >= oh * 60 + om && mins <= ch * 60 + cm;
+  });
+}
+
+export function formatRestaurantHours(
+  periods: ReadonlyArray<{ open: string; close: string }>,
+): string {
+  if (periods.length === 0) return "Closed";
+  return periods.map((period) => `${period.open}–${period.close}`).join(", ");
 }
 
 export const formatAUD = (cents: number) =>

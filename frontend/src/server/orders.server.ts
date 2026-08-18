@@ -45,7 +45,7 @@ const createOrderSchema = z.object({
 });
 
 function orderNumber(orderId: string): string {
-  return `ST-${orderId.replaceAll("-", "").slice(0, 12).toUpperCase()}`;
+  return `RC-${orderId.replaceAll("-", "").slice(0, 12).toUpperCase()}`;
 }
 
 async function pendingOrderFromRow(

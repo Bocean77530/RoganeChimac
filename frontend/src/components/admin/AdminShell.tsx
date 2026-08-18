@@ -1,9 +1,10 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ClipboardList, PlugZap, UtensilsCrossed } from "lucide-react";
+import { ClipboardList, ListPlus, PlugZap, UtensilsCrossed } from "lucide-react";
 import type { ReactNode } from "react";
 
 const links = [
   { href: "/admin", label: "Order board", icon: ClipboardList },
+  { href: "/admin/menu", label: "Menu", icon: ListPlus },
   { href: "/admin/integrations", label: "Integrations", icon: PlugZap },
 ] as const;
 
@@ -16,7 +17,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
         <div className="container-page flex min-h-16 flex-wrap items-center gap-4 py-3">
           <Link to="/admin" className="flex items-center gap-2 font-display text-lg font-bold">
             <UtensilsCrossed className="h-5 w-5" />
-            Seoul Table Operations
+            Rogane Chimac Operations
           </Link>
           <span className="rounded-full bg-primary px-2.5 py-1 text-xs font-bold text-primary-foreground">
             Demo
