@@ -2,6 +2,8 @@
 
 The Railway `seoul-table-demo` service hosts the simulated-payment order website and API. Its SQLite database lives on the service's existing `/data` volume. The separate `RoganeChimac` Railway service remains on its newer Stripe/PostgreSQL branch.
 
+Current demo URL: `https://seoul-table-demo-production.up.railway.app`.
+
 The demo website uses HTTP Basic authentication. Sign in with username `demo` and the private `DEMO_SITE_PASSWORD` configured on Railway. The restaurant page at `/merchant` then asks for the separate `MERCHANT_TOKEN`. Neither token belongs in the Git repository or a customer link.
 
 ## Keep the shop printer listening
@@ -14,8 +16,12 @@ Run this one command from `frontend/`:
 npm run print:railway
 ```
 
+On the verified shop Mac, the private `data/railway-worker.env` has already been filled in and the Brother queue has been tested. The browser login and merchant token are recorded locally in the ignored, mode-`0600` file `data/railway-demo-access.txt`.
+
 Leave that terminal running while the demo accepts orders. The script polls Railway every three seconds, creates one private kitchen PDF and one private front PDF per paid order, and sends their corresponding tickets to the configured local queues. Both queues can name the same Brother printer. PDFs default to `frontend/data/receipts/`; set `PRINT_PDF_DIR` in the private env file to move them. The Railway server never needs direct Wi-Fi access to the printer.
 
 To inspect pending work without claiming or printing it, run `npm run print:railway -- --dry-run --once`. To process only current pending jobs, run `npm run print:railway -- --once`. When closing a long-running worker, press Ctrl+C. Keep the Mac awake and connected to the internet and Brother printer during the demo.
 
 Customer flow: open the demo URL, place a fictional order, choose simulated payment success, and use the private confirmation link to view progress. Merchant flow: open `/merchant`, enter `MERCHANT_TOKEN`, advance the order, then refresh the customer's tracking page. This is a demo deployment with simulated payment; the public `RoganeChimac` production service has a separate Stripe Sandbox workflow.
+
+On 8 October 2026, deployed order `ST-0FA196EFD5` was created and paid through the Railway URL. The shop worker produced kitchen and front PDFs and sent Brother spooler jobs `-9` and `-10`. Railway recorded both jobs as queued to the operating system, and the shop owner confirmed that both new sheets came out clearly. Merchant changes to `preparing` and `preparing_delivery` appeared in the customer lookup. PDF text extraction confirmed the Korean dish name and customer note on both files, with the total present only on the front copy.
