@@ -15,6 +15,8 @@ export type ServiceErrorCode =
   | "INVALID_MODIFIERS"
   | "PROMO_INVALID"
   | "PICKUP_SLOT_UNAVAILABLE"
+  | "TABLE_CODE_INVALID"
+  | "PAYMENT_METHOD_UNAVAILABLE"
   | "QUOTE_EXPIRED"
   | "QUOTE_ALREADY_CONSUMED"
   | "PRICE_CHANGED"
@@ -36,6 +38,4 @@ export type ServiceError = {
   correlationId?: string;
 };
 
-export type ServiceResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; error: ServiceError };
+export type ServiceResult<T> = { ok: true; data: T } | { ok: false; error: ServiceError };

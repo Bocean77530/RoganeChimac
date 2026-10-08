@@ -2,6 +2,7 @@ import { pgEnum } from "drizzle-orm/pg-core";
 
 export const orderStatusEnum = pgEnum("order_status", [
   "pending_payment",
+  "submitted",
   "paid",
   "accepted",
   "preparing",

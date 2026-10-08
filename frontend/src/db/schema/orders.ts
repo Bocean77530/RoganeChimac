@@ -16,6 +16,7 @@ import { orderStatusEnum, paymentStatusEnum } from "./enums";
 import { promotions } from "./menu";
 import { restaurants } from "./restaurants";
 import { pickupSlots } from "./slots";
+import { restaurantTables } from "./tables";
 
 export const orderQuotes = pgTable(
   "order_quotes",
@@ -24,9 +25,12 @@ export const orderQuotes = pgTable(
     restaurantId: uuid("restaurant_id")
       .notNull()
       .references(() => restaurants.id, { onDelete: "cascade" }),
-    pickupSlotId: uuid("pickup_slot_id")
-      .notNull()
-      .references(() => pickupSlots.id, { onDelete: "restrict" }),
+    pickupSlotId: uuid("pickup_slot_id").references(() => pickupSlots.id, { onDelete: "restrict" }),
+    fulfillmentMethod: varchar("fulfillment_method", { length: 16 }).notNull().default("pickup"),
+    paymentMethod: varchar("payment_method", { length: 20 }).notNull().default("online"),
+    tableId: uuid("table_id").references(() => restaurantTables.id, { onDelete: "restrict" }),
+    tableVersion: integer("table_version"),
+    tableLabel: text("table_label"),
     requestHash: varchar("request_hash", { length: 64 }).notNull(),
     linesSnapshot: jsonb("lines_snapshot").$type<PricedLineSnapshot[]>().notNull(),
     currency: varchar("currency", { length: 3 }).notNull().default("AUD"),
@@ -45,6 +49,11 @@ export const orderQuotes = pgTable(
     index("order_quotes_expiry_idx").on(table.expiresAt),
     index("order_quotes_restaurant_created_idx").on(table.restaurantId, table.createdAt),
     check("order_quotes_currency_chk", sql`${table.currency} = 'AUD'`),
+    check(
+      "order_quotes_fulfillment_chk",
+      sql`(${table.fulfillmentMethod} = 'pickup' and ${table.pickupSlotId} is not null and ${table.tableId} is null and ${table.paymentMethod} = 'online') or
+          (${table.fulfillmentMethod} = 'dine_in' and ${table.pickupSlotId} is null and ${table.tableId} is not null and ${table.tableVersion} is not null and ${table.tableVersion} > 0 and ${table.tableLabel} is not null and ${table.paymentMethod} = 'pay_at_counter')`,
+    ),
     check("order_quotes_subtotal_chk", sql`${table.subtotalCents} >= 0`),
     check(
       "order_quotes_discount_chk",
@@ -67,12 +76,13 @@ export const orders = pgTable(
     quoteId: uuid("quote_id")
       .notNull()
       .references(() => orderQuotes.id, { onDelete: "restrict" }),
-    pickupSlotId: uuid("pickup_slot_id")
-      .notNull()
-      .references(() => pickupSlots.id, { onDelete: "restrict" }),
+    pickupSlotId: uuid("pickup_slot_id").references(() => pickupSlots.id, { onDelete: "restrict" }),
+    tableId: uuid("table_id").references(() => restaurantTables.id, { onDelete: "restrict" }),
+    tableLabel: text("table_label"),
     orderNumber: varchar("order_number", { length: 40 }).notNull(),
     trackingTokenHash: varchar("tracking_token_hash", { length: 64 }).notNull(),
     fulfillmentMethod: varchar("fulfillment_method", { length: 16 }).notNull().default("pickup"),
+    paymentMethod: varchar("payment_method", { length: 20 }).notNull().default("online"),
     status: orderStatusEnum("status").notNull().default("pending_payment"),
     paymentStatus: paymentStatusEnum("payment_status").notNull().default("pending"),
     customerName: varchar("customer_name", { length: 100 }).notNull(),
@@ -94,7 +104,7 @@ export const orders = pgTable(
     paymentDueAt: timestamp("payment_due_at", {
       withTimezone: true,
       mode: "date",
-    }).notNull(),
+    }),
     placedAt: timestamp("placed_at", { withTimezone: true, mode: "date" }),
     version: integer("version").notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
@@ -106,7 +116,11 @@ export const orders = pgTable(
     uniqueIndex("orders_tracking_hash_uidx").on(table.trackingTokenHash),
     index("orders_kitchen_queue_idx").on(table.restaurantId, table.status, table.requestedFor),
     index("orders_payment_expiry_idx").on(table.status, table.paymentDueAt),
-    check("orders_fulfillment_chk", sql`${table.fulfillmentMethod} = 'pickup'`),
+    check(
+      "orders_fulfillment_chk",
+      sql`(${table.fulfillmentMethod} = 'pickup' and ${table.pickupSlotId} is not null and ${table.tableId} is null and ${table.paymentMethod} = 'online' and ${table.paymentDueAt} is not null) or
+          (${table.fulfillmentMethod} = 'dine_in' and ${table.pickupSlotId} is null and ${table.tableId} is not null and ${table.tableLabel} is not null and ${table.paymentMethod} = 'pay_at_counter' and ${table.paymentDueAt} is null)`,
+    ),
     check("orders_currency_chk", sql`${table.currency} = 'AUD'`),
     check("orders_subtotal_chk", sql`${table.subtotalCents} >= 0`),
     check(

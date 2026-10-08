@@ -7,11 +7,7 @@ import type { ServiceResult } from "@/domain/common";
 import type { PublicOrderView } from "@/domain/order";
 import { withDatabase } from "@/db/client.server";
 import { orders, payments } from "@/db/schema";
-import {
-  deriveTrackingToken,
-  hashTrackingToken,
-  trackingSecret,
-} from "./crypto.server";
+import { deriveTrackingToken, hashTrackingToken, trackingSecret } from "./crypto.server";
 import { loadOrderLines, loadOrderTimeline } from "./repositories/order-repository.server";
 import { failure, internalError, serviceError, success } from "./service-errors.server";
 
@@ -39,6 +35,8 @@ async function publicOrderView(
     orderNumber: order.orderNumber,
     status: order.status,
     paymentStatus: order.paymentStatus,
+    fulfillmentMethod: order.fulfillmentMethod as "pickup" | "dine_in",
+    tableLabel: order.tableLabel,
     pickupAt: order.requestedFor.toISOString(),
     placedAt: order.placedAt?.toISOString() ?? null,
     maskedEmail: maskEmail(order.customerEmail),

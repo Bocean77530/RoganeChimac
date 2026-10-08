@@ -3,6 +3,7 @@ import type { PickupSelection } from "./availability";
 
 export type OrderStatus =
   | "pending_payment"
+  | "submitted"
   | "paid"
   | "accepted"
   | "preparing"
@@ -12,12 +13,7 @@ export type OrderStatus =
   | "cancelled";
 
 export type PaymentStatus =
-  | "unpaid"
-  | "pending"
-  | "paid"
-  | "failed"
-  | "partially_refunded"
-  | "refunded";
+  "unpaid" | "pending" | "paid" | "failed" | "partially_refunded" | "refunded";
 
 export type CheckoutDraftLine = {
   clientLineId: string;
@@ -29,7 +25,8 @@ export type CheckoutDraftLine = {
 
 export type QuoteOrderInput = {
   restaurantSlug: string;
-  fulfillment: PickupSelection;
+  fulfillment: PickupSelection | { type: "dine_in"; mode: "table"; tableCode: string };
+  paymentMethod?: "online" | "pay_at_counter";
   lines: CheckoutDraftLine[];
   promoCode?: string;
 };
@@ -64,7 +61,10 @@ export type OrderTotalsSnapshot = {
 export type OrderQuote = {
   quoteId: string;
   expiresAt: string;
-  fulfillment: { slotId: string; pickupAt: string };
+  fulfillment:
+    | { type: "pickup"; slotId: string; pickupAt: string }
+    | { type: "dine_in"; tableId: string; tableLabel: string };
+  paymentMethod: "online" | "pay_at_counter";
   lines: PricedLineSnapshot[];
   totals: OrderTotalsSnapshot;
 };
@@ -84,15 +84,23 @@ export type CreateOrderInput = {
   termsVersion: string;
 };
 
-export type PendingOrder = {
+export type CreatedOrder = {
   id: string;
   orderNumber: string;
   trackingToken: string;
-  status: "pending_payment";
-  paymentStatus: "pending";
-  pickupAt: string;
+  status: OrderStatus;
+  paymentStatus: PaymentStatus;
+  fulfillment: { type: "pickup"; pickupAt: string } | { type: "dine_in"; tableLabel: string };
+  pickupAt?: string;
   customerEmail: string;
   totals: OrderTotalsSnapshot;
+};
+
+export type PendingOrder = CreatedOrder & {
+  status: "pending_payment";
+  paymentStatus: "pending";
+  fulfillment: { type: "pickup"; pickupAt: string };
+  pickupAt: string;
 };
 
 export type OrderStatusEvent = {
@@ -106,6 +114,8 @@ export type PublicOrderView = {
   orderNumber: string;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
+  fulfillmentMethod: "pickup" | "dine_in";
+  tableLabel: string | null;
   pickupAt: string;
   placedAt: string | null;
   maskedEmail: string;
@@ -119,7 +129,8 @@ export type AdminOrderSummary = {
   orderNumber: string;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
-  fulfillmentMethod: "pickup";
+  fulfillmentMethod: "pickup" | "dine_in";
+  tableLabel?: string | null;
   placedAt: string;
   requestedFor: string;
   readyBy: string | null;

@@ -4,10 +4,12 @@ import { createServerFn } from "@tanstack/react-start";
 import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { ServiceResult } from "@/domain/common";
-import type { CreateOrderInput, PendingOrder } from "@/domain/order";
+import type { CreateOrderInput, CreatedOrder } from "@/domain/order";
+import { dineInLocalPrintPayload } from "@/domain/local-print";
 import { withDatabase } from "@/db/client.server";
 import {
   idempotencyKeys,
+  integrationJobs,
   orderItemModifiers,
   orderItems,
   orderQuotes,
@@ -15,6 +17,8 @@ import {
   orderStatusEvents,
   pickupSlots,
   promotions,
+  restaurantTables,
+  restaurants,
 } from "@/db/schema";
 import {
   deriveTrackingToken,
@@ -48,18 +52,19 @@ function orderNumber(orderId: string): string {
   return `RC-${orderId.replaceAll("-", "").slice(0, 12).toUpperCase()}`;
 }
 
-async function pendingOrderFromRow(
-  row: typeof orders.$inferSelect,
-  pickupAt: Date,
-): Promise<PendingOrder> {
+async function createdOrderFromRow(row: typeof orders.$inferSelect): Promise<CreatedOrder> {
   const secret = trackingSecret();
   return {
     id: row.id,
     orderNumber: row.orderNumber,
     trackingToken: await deriveTrackingToken(row.id, secret),
-    status: "pending_payment",
-    paymentStatus: "pending",
-    pickupAt: pickupAt.toISOString(),
+    status: row.status,
+    paymentStatus: row.paymentStatus,
+    fulfillment:
+      row.fulfillmentMethod === "dine_in"
+        ? { type: "dine_in", tableLabel: row.tableLabel! }
+        : { type: "pickup", pickupAt: row.requestedFor.toISOString() },
+    ...(row.fulfillmentMethod === "pickup" ? { pickupAt: row.requestedFor.toISOString() } : {}),
     customerEmail: row.customerEmail,
     totals: {
       currency: "AUD",
@@ -72,7 +77,7 @@ async function pendingOrderFromRow(
 
 export async function createPendingOrder(
   rawInput: CreateOrderInput,
-): Promise<ServiceResult<PendingOrder>> {
+): Promise<ServiceResult<CreatedOrder>> {
   const parsed = createOrderSchema.safeParse(rawInput);
   if (!parsed.success) {
     return failure(
@@ -83,16 +88,21 @@ export async function createPendingOrder(
   }
 
   const input = parsed.data;
-  const now = new Date();
   const requestHash = await hashObject(input);
 
   try {
     return await withDatabase(async (db) =>
       db.transaction(async (tx) => {
         const quote = (
-          await tx.select().from(orderQuotes).where(eq(orderQuotes.id, input.quoteId)).limit(1)
+          await tx
+            .select()
+            .from(orderQuotes)
+            .where(eq(orderQuotes.id, input.quoteId))
+            .for("update")
+            .limit(1)
         )[0];
         if (!quote) abortWith(serviceError("QUOTE_EXPIRED", "The quote is no longer available."));
+        const now = new Date();
 
         const insertedKey = await tx
           .insert(idempotencyKeys)
@@ -138,17 +148,14 @@ export async function createPendingOrder(
           }
 
           const existingOrder = (
-            await tx
-              .select({ order: orders, pickupAt: pickupSlots.startsAt })
-              .from(orders)
-              .innerJoin(pickupSlots, eq(pickupSlots.id, orders.pickupSlotId))
-              .where(eq(orders.id, existing.resourceId))
-              .limit(1)
+            await tx.select().from(orders).where(eq(orders.id, existing.resourceId)).limit(1)
           )[0];
-          if (!existingOrder || existingOrder.order.status !== "pending_payment") {
-            abortWith(serviceError("REQUEST_IN_PROGRESS", "This checkout has already moved on."));
+          if (!existingOrder) {
+            abortWith(
+              serviceError("REQUEST_IN_PROGRESS", "This checkout is still being processed."),
+            );
           }
-          return success(await pendingOrderFromRow(existingOrder.order, existingOrder.pickupAt));
+          return success(await createdOrderFromRow(existingOrder));
         }
 
         if (quote.expiresAt <= now) {
@@ -160,25 +167,58 @@ export async function createPendingOrder(
           abortWith(serviceError("QUOTE_ALREADY_CONSUMED", "The quote has already been used."));
         }
 
-        const [slot] = await tx
-          .update(pickupSlots)
-          .set({
-            reservedCount: sql`${pickupSlots.reservedCount} + 1`,
-            updatedAt: now,
-          })
-          .where(
-            and(
-              eq(pickupSlots.id, quote.pickupSlotId),
-              eq(pickupSlots.restaurantId, quote.restaurantId),
-              eq(pickupSlots.enabled, true),
-              lt(pickupSlots.reservedCount, pickupSlots.capacity),
-              sql`${pickupSlots.startsAt} > ${now}`,
-            ),
-          )
-          .returning();
-        if (!slot) {
+        let slot: typeof pickupSlots.$inferSelect | undefined;
+        let table: typeof restaurantTables.$inferSelect | undefined;
+        if (quote.fulfillmentMethod === "pickup") {
+          [slot] = await tx
+            .update(pickupSlots)
+            .set({
+              reservedCount: sql`${pickupSlots.reservedCount} + 1`,
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(pickupSlots.id, quote.pickupSlotId!),
+                eq(pickupSlots.restaurantId, quote.restaurantId),
+                eq(pickupSlots.enabled, true),
+                lt(pickupSlots.reservedCount, pickupSlots.capacity),
+                sql`${pickupSlots.startsAt} > ${now}`,
+              ),
+            )
+            .returning();
+          if (!slot) {
+            abortWith(
+              serviceError("PICKUP_SLOT_UNAVAILABLE", "That pickup time is no longer available."),
+            );
+          }
+        } else if (
+          quote.fulfillmentMethod === "dine_in" &&
+          quote.paymentMethod === "pay_at_counter"
+        ) {
+          const [restaurant] = await tx
+            .select({ dineInEnabled: restaurants.dineInEnabled })
+            .from(restaurants)
+            .where(eq(restaurants.id, quote.restaurantId))
+            .limit(1);
+          [table] = await tx
+            .select()
+            .from(restaurantTables)
+            .where(
+              and(
+                eq(restaurantTables.id, quote.tableId!),
+                eq(restaurantTables.restaurantId, quote.restaurantId),
+                eq(restaurantTables.tokenVersion, quote.tableVersion!),
+                eq(restaurantTables.active, true),
+              ),
+            )
+            .for("update")
+            .limit(1);
+          if (!restaurant?.dineInEnabled || !table) {
+            abortWith(serviceError("TABLE_CODE_INVALID", "This table code is no longer valid."));
+          }
+        } else {
           abortWith(
-            serviceError("PICKUP_SLOT_UNAVAILABLE", "That pickup time is no longer available."),
+            serviceError("PAYMENT_METHOD_UNAVAILABLE", "This payment method is unavailable."),
           );
         }
 
@@ -207,6 +247,7 @@ export async function createPendingOrder(
           Number(process.env.PENDING_ORDER_TTL_SECONDS ?? 1_800),
         );
         const paymentDueAt = new Date(now.getTime() + pendingSeconds * 1_000);
+        const dineIn = Boolean(table);
         const [created] = await tx
           .insert(orders)
           .values({
@@ -214,8 +255,14 @@ export async function createPendingOrder(
             restaurantId: quote.restaurantId,
             quoteId: quote.id,
             pickupSlotId: quote.pickupSlotId,
+            tableId: table?.id,
+            tableLabel: table?.label,
             orderNumber: orderNumber(id),
             trackingTokenHash: await hashTrackingToken(trackingToken, secret),
+            fulfillmentMethod: dineIn ? "dine_in" : "pickup",
+            paymentMethod: dineIn ? "pay_at_counter" : "online",
+            status: dineIn ? "submitted" : "pending_payment",
+            paymentStatus: dineIn ? "unpaid" : "pending",
             customerName: input.customer.name.trim(),
             customerPhone: input.customer.phone.replace(/[\s()-]/g, ""),
             customerEmail: input.customer.email.trim().toLowerCase(),
@@ -227,8 +274,9 @@ export async function createPendingOrder(
             discountCents: quote.discountCents,
             totalCents: quote.totalCents,
             promotionCode: quote.promotionCode,
-            requestedFor: slot.startsAt,
-            paymentDueAt,
+            requestedFor: slot?.startsAt ?? now,
+            paymentDueAt: dineIn ? null : paymentDueAt,
+            placedAt: dineIn ? now : null,
           })
           .returning();
         if (!created) throw new Error("Order insert returned no row");
@@ -265,39 +313,68 @@ export async function createPendingOrder(
           }
         }
 
+        if (table) {
+          for (const destination of ["kitchen", "front"] as const) {
+            await tx
+              .insert(integrationJobs)
+              .values({
+                id: crypto.randomUUID(),
+                restaurantId: quote.restaurantId,
+                orderId: created.id,
+                kind: "kitchen_print",
+                provider: "local_worker",
+                idempotencyKey: `local_print:${created.id}:${destination}`,
+                payloadVersion: 2,
+                payload: dineInLocalPrintPayload({
+                  destination,
+                  orderId: created.id,
+                  orderNumber: created.orderNumber,
+                  placedAt: now,
+                  tableId: table.id,
+                  tableLabel: table.label,
+                  customerName: created.customerName,
+                  customerPhone: created.customerPhone,
+                  customerNotes: created.customerNotes ?? undefined,
+                  lines: quote.linesSnapshot,
+                  totals: {
+                    currency: "AUD",
+                    subtotalCents: created.subtotalCents,
+                    discountCents: created.discountCents,
+                    totalCents: created.totalCents,
+                  },
+                }),
+                nextAttemptAt: now,
+                maxAttempts: 3,
+              })
+              .onConflictDoNothing({
+                target: [integrationJobs.restaurantId, integrationJobs.idempotencyKey],
+              });
+          }
+        }
+
         await tx.insert(orderStatusEvents).values({
           id: crypto.randomUUID(),
           orderId: created.id,
           fromStatus: null,
-          toStatus: "pending_payment",
+          toStatus: dineIn ? "submitted" : "pending_payment",
           actorType: "system",
-          reason: "Checkout created",
+          reason: dineIn ? "Dine-in order submitted; pay at counter" : "Checkout created",
           createdAt: now,
         });
-        await tx
+        const [consumedQuote] = await tx
           .update(orderQuotes)
           .set({ consumedAt: now })
-          .where(and(eq(orderQuotes.id, quote.id), isNull(orderQuotes.consumedAt)));
+          .where(and(eq(orderQuotes.id, quote.id), isNull(orderQuotes.consumedAt)))
+          .returning({ id: orderQuotes.id });
+        if (!consumedQuote) {
+          abortWith(serviceError("QUOTE_ALREADY_CONSUMED", "The quote has already been used."));
+        }
         await tx
           .update(idempotencyKeys)
           .set({ state: "completed", resourceId: created.id, updatedAt: now })
           .where(eq(idempotencyKeys.id, insertedKey[0]!.id));
 
-        return success({
-          id: created.id,
-          orderNumber: created.orderNumber,
-          trackingToken,
-          status: "pending_payment",
-          paymentStatus: "pending",
-          pickupAt: created.requestedFor.toISOString(),
-          customerEmail: created.customerEmail,
-          totals: {
-            currency: "AUD",
-            subtotalCents: created.subtotalCents,
-            discountCents: created.discountCents,
-            totalCents: created.totalCents,
-          },
-        });
+        return success(await createdOrderFromRow(created));
       }),
     );
   } catch (error) {

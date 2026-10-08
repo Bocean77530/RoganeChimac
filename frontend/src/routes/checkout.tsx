@@ -210,6 +210,9 @@ function CheckoutPage() {
         },
       });
       if (!order.ok) throw new CheckoutError(order.error.message);
+      if (order.data.fulfillment.type !== "pickup") {
+        throw new CheckoutError("This checkout is only available for pickup orders.");
+      }
 
       const checkout = await createStripeCheckoutSessionFn({
         data: { orderId: order.data.id },
@@ -227,7 +230,7 @@ function CheckoutPage() {
         trackingToken: order.data.trackingToken,
         sessionId: checkout.data.session.sessionId,
         clientSecret: checkout.data.session.launch.clientSecret,
-        pickupAt: order.data.pickupAt,
+        pickupAt: order.data.fulfillment.pickupAt,
         totals: order.data.totals,
       });
     } catch (error) {

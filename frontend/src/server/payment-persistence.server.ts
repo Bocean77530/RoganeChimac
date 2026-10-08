@@ -96,7 +96,13 @@ export async function preparePaymentAttempt(input: {
           await tx.select().from(orders).where(eq(orders.id, input.orderId)).limit(1)
         )[0];
         if (!order) return failure(serviceError("ORDER_NOT_FOUND", "Order not found."));
-        if (order.status !== "pending_payment" || order.paymentDueAt <= now) {
+        if (
+          order.fulfillmentMethod !== "pickup" ||
+          order.paymentMethod !== "online" ||
+          order.status !== "pending_payment" ||
+          !order.paymentDueAt ||
+          order.paymentDueAt <= now
+        ) {
           return failure(
             serviceError("PAYMENT_NOT_CONFIRMED", "This order can no longer be paid."),
           );

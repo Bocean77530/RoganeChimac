@@ -27,7 +27,16 @@ const steps = [
   "Collected",
 ] as const;
 
+const dineInSteps = [
+  "Order submitted",
+  "Accepted by kitchen",
+  "Preparing",
+  "Ready",
+  "Completed",
+] as const;
+
 const stepByStatus: Partial<Record<OrderStatus, number>> = {
+  submitted: 0,
   paid: 0,
   accepted: 1,
   preparing: 2,
@@ -85,6 +94,7 @@ function TrackOrder() {
   const order = orderQuery.data;
   const currentStep = stepByStatus[order.status] ?? -1;
   const terminalProblem = order.status === "cancelled" || order.status === "expired";
+  const dineIn = order.fulfillmentMethod === "dine_in";
 
   return (
     <div className="container-page max-w-2xl py-14">
@@ -92,25 +102,24 @@ function TrackOrder() {
         Order {order.orderNumber}
       </p>
       <h1 className="mt-1 font-display text-3xl font-extrabold md:text-4xl">
-        {statusHeading(order.status)}
+        {statusHeading(order.status, dineIn)}
       </h1>
       <p className="mt-2 flex items-center gap-2 text-muted-foreground">
-        <Clock className="h-4 w-4" /> Pickup {formatPickupTime(order.pickupAt)} at{" "}
-        {restaurant.address.line1}
+        <Clock className="h-4 w-4" />{" "}
+        {dineIn
+          ? `Table ${order.tableLabel ?? ""} · ${order.paymentStatus === "unpaid" ? "Pay at counter" : "Paid"}`
+          : `Pickup ${formatPickupTime(order.pickupAt)} at ${restaurant.address.line1}`}
       </p>
 
       {terminalProblem && (
         <div className="mt-6 flex gap-3 rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm">
           <AlertCircle className="h-5 w-5 shrink-0 text-destructive" />
-          <p>
-            This order is {order.status}. Please call the restaurant before travelling to collect
-            it.
-          </p>
+          <p>This order is {order.status}. Please call the restaurant for help.</p>
         </div>
       )}
 
       <ol className="mt-8 space-y-4">
-        {steps.map((label, index) => {
+        {(dineIn ? dineInSteps : steps).map((label, index) => {
           const done = index <= currentStep;
           const active = index === currentStep;
           return (
@@ -155,10 +164,12 @@ function TrackingUnavailable({ message }: { message: string }) {
   );
 }
 
-function statusHeading(status: OrderStatus): string {
+function statusHeading(status: OrderStatus, dineIn = false): string {
   switch (status) {
     case "pending_payment":
       return "Waiting for payment";
+    case "submitted":
+      return "Order submitted";
     case "paid":
       return "Payment confirmed";
     case "accepted":
@@ -166,9 +177,9 @@ function statusHeading(status: OrderStatus): string {
     case "preparing":
       return "Your order is being prepared";
     case "ready":
-      return "Ready for pickup";
+      return dineIn ? "Ready" : "Ready for pickup";
     case "collected":
-      return "Order collected";
+      return dineIn ? "Order complete" : "Order collected";
     case "expired":
       return "This order expired";
     case "cancelled":

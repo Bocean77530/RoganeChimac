@@ -448,6 +448,7 @@ function statusVersion(status: MockOrderInput["status"]): number {
 function statusLabel(status: OrderStatus): string {
   return {
     pending_payment: "Payment pending",
+    submitted: "Submitted; pay at counter",
     paid: "Payment confirmed",
     accepted: "Order accepted",
     preparing: "Preparing",

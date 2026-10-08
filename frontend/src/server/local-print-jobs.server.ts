@@ -47,6 +47,7 @@ export async function listLocalPrintJobs() {
         and(
           eq(integrationJobs.provider, "local_worker"),
           eq(integrationJobs.kind, "kitchen_print"),
+          eq(integrationJobs.payloadVersion, 1),
           inArray(integrationJobs.status, ["queued", "retry_scheduled"]),
         ),
       )
@@ -63,6 +64,7 @@ export async function claimLocalPrintJob() {
         SELECT id FROM integration_jobs
         WHERE provider = 'local_worker'
           AND kind = 'kitchen_print'
+          AND payload_version = 1
           AND status IN ('queued', 'retry_scheduled')
           AND next_attempt_at <= now()
         ORDER BY created_at, id

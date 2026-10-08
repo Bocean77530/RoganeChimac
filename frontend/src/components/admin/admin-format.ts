@@ -21,6 +21,7 @@ export function formatAdminTime(isoDate: string, timezone = restaurant.timezone)
 export function orderStatusLabel(status: OrderStatus): string {
   return {
     pending_payment: "Payment pending",
+    submitted: "Submitted",
     paid: "New",
     accepted: "Accepted",
     preparing: "Preparing",

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 
 const storageKey = "rogane-admin-access-token";
 const nextStatus: Partial<Record<OrderStatus, { to: OrderStatus; label: string }>> = {
+  submitted: { to: "accepted", label: "Accept order" },
   paid: { to: "accepted", label: "Accept order" },
   accepted: { to: "preparing", label: "Start preparing" },
   preparing: { to: "ready", label: "Mark ready for pickup" },
@@ -67,7 +68,7 @@ function MerchantOrdersPage() {
     <main className="container-page py-12">
       <h1 className="font-display text-3xl font-extrabold">Merchant orders</h1>
       <p className="mt-2 text-muted-foreground">
-        Paid pickup orders from {restaurant.name}. Customer tracking refreshes automatically.
+        Pickup and table orders from {restaurant.name}. Customer tracking refreshes automatically.
       </p>
       <form
         className="mt-6 flex max-w-xl gap-2"
@@ -98,7 +99,7 @@ function MerchantOrdersPage() {
         </p>
       ) : (
         <div className="mt-8 grid gap-5 lg:grid-cols-2">
-          {ordersQuery.data?.length === 0 && <p>No paid orders yet.</p>}
+          {ordersQuery.data?.length === 0 && <p>No orders yet.</p>}
           {ordersQuery.data?.map((order) => {
             const action = nextStatus[order.status];
             const busy = change.isPending && change.variables?.order.id === order.id;
@@ -108,12 +109,21 @@ function MerchantOrdersPage() {
                   <div>
                     <h2 className="font-display text-xl font-bold">{order.orderNumber}</h2>
                     <p className="text-sm text-muted-foreground">
-                      Pickup{" "}
-                      {new Intl.DateTimeFormat("en-AU", {
-                        timeZone: restaurant.timezone,
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      }).format(new Date(order.requestedFor))}
+                      {order.fulfillmentMethod === "dine_in" ? (
+                        <>
+                          Table {order.tableLabel} ·{" "}
+                          {order.paymentStatus === "unpaid" ? "Pay at counter" : "Paid"}
+                        </>
+                      ) : (
+                        <>
+                          Pickup{" "}
+                          {new Intl.DateTimeFormat("en-AU", {
+                            timeZone: restaurant.timezone,
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          }).format(new Date(order.requestedFor))}
+                        </>
+                      )}
                     </p>
                   </div>
                   <strong className="rounded-full bg-primary/10 px-3 py-1 text-sm text-primary">
@@ -157,7 +167,11 @@ function MerchantOrdersPage() {
                     disabled={busy}
                     onClick={() => change.mutate({ order, toStatus: action.to })}
                   >
-                    {busy ? "Updating…" : action.label}
+                    {busy
+                      ? "Updating…"
+                      : order.fulfillmentMethod === "dine_in" && action.to === "ready"
+                        ? "Mark ready"
+                        : action.label}
                   </Button>
                 )}
                 {change.isError && change.variables?.order.id === order.id && (

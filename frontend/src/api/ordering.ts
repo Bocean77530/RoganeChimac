@@ -23,7 +23,13 @@ const quoteSchema = z.object({
       mode: z.literal("scheduled"),
       slotId: z.string().uuid(),
     }),
+    z.object({
+      type: z.literal("dine_in"),
+      mode: z.literal("table"),
+      tableCode: z.string().trim().min(40).max(256),
+    }),
   ]),
+  paymentMethod: z.enum(["online", "pay_at_counter"]).optional(),
   lines: z.array(draftLineSchema).min(1).max(50),
   promoCode: z.string().trim().max(64).optional(),
 });
@@ -79,8 +85,6 @@ export const getPublicOrderFn = createServerFn({ method: "GET" })
 export const getPublicOrderByPaymentSessionFn = createServerFn({ method: "GET" })
   .validator(z.object({ sessionId: z.string().trim().min(16).max(255) }))
   .handler(async ({ data }) => {
-    const { getPublicOrderByPaymentSession } = await import(
-      "@/server/public-orders.server"
-    );
+    const { getPublicOrderByPaymentSession } = await import("@/server/public-orders.server");
     return getPublicOrderByPaymentSession(data);
   });

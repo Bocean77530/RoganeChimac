@@ -19,7 +19,16 @@ export async function listMerchantOrders(
       const recent = await db
         .select({ id: orders.id })
         .from(orders)
-        .where(inArray(orders.status, ["paid", "accepted", "preparing", "ready", "collected"]))
+        .where(
+          inArray(orders.status, [
+            "submitted",
+            "paid",
+            "accepted",
+            "preparing",
+            "ready",
+            "collected",
+          ]),
+        )
         .orderBy(desc(orders.placedAt))
         .limit(50);
       const details = await Promise.all(recent.map((row) => loadAdminOrderDetail(db, row.id)));

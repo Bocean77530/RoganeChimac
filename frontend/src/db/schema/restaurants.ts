@@ -30,6 +30,7 @@ export const restaurants = pgTable(
     email: varchar("email", { length: 320 }),
     abn: varchar("abn", { length: 20 }),
     orderingEnabled: boolean("ordering_enabled").notNull().default(true),
+    dineInEnabled: boolean("dine_in_enabled").notNull().default(false),
     pickupPrepMinutes: smallint("pickup_prep_minutes").notNull().default(20),
     pickupSlotIntervalMinutes: smallint("pickup_slot_interval_minutes").notNull().default(15),
     pickupBookingDays: smallint("pickup_booking_days").notNull().default(7),

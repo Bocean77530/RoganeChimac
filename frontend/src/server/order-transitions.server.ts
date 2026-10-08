@@ -15,6 +15,7 @@ import { withDatabase } from "@/db/client.server";
 
 const transitions: Record<OrderStatus, readonly OrderStatus[]> = {
   pending_payment: ["paid", "expired", "cancelled"],
+  submitted: ["accepted", "cancelled"],
   paid: ["accepted", "cancelled"],
   accepted: ["preparing", "cancelled"],
   preparing: ["ready", "cancelled"],
@@ -26,6 +27,7 @@ const transitions: Record<OrderStatus, readonly OrderStatus[]> = {
 
 const statusLabels: Record<OrderStatus, string> = {
   pending_payment: "Payment pending",
+  submitted: "Order submitted; pay at counter",
   paid: "Payment received",
   accepted: "Order accepted",
   preparing: "Preparing",
@@ -90,7 +92,7 @@ export async function applyOrderTransition(
     abortWith(serviceError("ORDER_VERSION_CONFLICT", "The order was updated elsewhere.", true));
   }
 
-  if (input.toStatus === "cancelled" || input.toStatus === "expired") {
+  if ((input.toStatus === "cancelled" || input.toStatus === "expired") && current.pickupSlotId) {
     await db
       .update(pickupSlots)
       .set({

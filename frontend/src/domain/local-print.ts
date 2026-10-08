@@ -1,8 +1,8 @@
-import type { AdminOrderDetail } from "./order";
+import type { AdminOrderDetail, PricedLineSnapshot } from "./order";
 
 export type LocalPrintDestination = "kitchen" | "front";
 
-export type LocalPrintPayload = {
+export type PickupLocalPrintPayload = {
   schemaVersion: 1;
   destination: LocalPrintDestination;
   orderNumber: string;
@@ -24,11 +24,28 @@ export type LocalPrintPayload = {
   totals: AdminOrderDetail["totals"];
 };
 
+export type DineInLocalPrintPayload = {
+  schemaVersion: 2;
+  destination: LocalPrintDestination;
+  orderId: string;
+  orderNumber: string;
+  placedAt: string;
+  method: "dine_in";
+  table: { id: string; label: string };
+  payment: { method: "pay_at_counter"; status: "unpaid"; label: "PAY AT COUNTER" };
+  customer: { name: string; phone: string };
+  items: PickupLocalPrintPayload["items"];
+  orderNotes?: string;
+  totals: AdminOrderDetail["totals"];
+};
+
+export type LocalPrintPayload = PickupLocalPrintPayload | DineInLocalPrintPayload;
+
 export function localPrintPayload(
   order: AdminOrderDetail,
   destination: LocalPrintDestination,
   paidAt: Date,
-): LocalPrintPayload {
+): PickupLocalPrintPayload {
   return {
     schemaVersion: 1,
     destination,
@@ -52,5 +69,45 @@ export function localPrintPayload(
     })),
     orderNotes: order.customerNotes ?? undefined,
     totals: order.totals,
+  };
+}
+
+export function dineInLocalPrintPayload(input: {
+  destination: LocalPrintDestination;
+  orderId: string;
+  orderNumber: string;
+  placedAt: Date;
+  tableId: string;
+  tableLabel: string;
+  customerName: string;
+  customerPhone: string;
+  customerNotes?: string;
+  lines: PricedLineSnapshot[];
+  totals: AdminOrderDetail["totals"];
+}): DineInLocalPrintPayload {
+  return {
+    schemaVersion: 2,
+    destination: input.destination,
+    orderId: input.orderId,
+    orderNumber: input.orderNumber,
+    placedAt: input.placedAt.toISOString(),
+    method: "dine_in",
+    table: { id: input.tableId, label: input.tableLabel },
+    payment: { method: "pay_at_counter", status: "unpaid", label: "PAY AT COUNTER" },
+    customer: { name: input.customerName, phone: input.customerPhone },
+    items: input.lines.map((line) => ({
+      quantity: line.quantity,
+      name: line.name,
+      koreanName: line.koreanName,
+      options: line.modifiers.map((modifier) => ({
+        groupName: modifier.groupName,
+        name: modifier.optionName,
+      })),
+      notes: line.notes,
+      unitPriceCents: line.unitPriceCents,
+      lineTotalCents: line.lineTotalCents,
+    })),
+    orderNotes: input.customerNotes,
+    totals: input.totals,
   };
 }

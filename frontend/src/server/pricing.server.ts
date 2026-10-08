@@ -14,6 +14,7 @@ import { orderQuotes } from "@/db/schema";
 import { withDatabase } from "@/db/client.server";
 import { hashObject } from "./crypto.server";
 import { resolvePickupSelection } from "./availability.server";
+import { resolveActiveTable } from "./table-codes.server";
 import {
   findPromotion,
   findRestaurantBySlug,
@@ -40,7 +41,13 @@ const quoteOrderSchema = z.object({
       mode: z.literal("scheduled"),
       slotId: z.string().uuid(),
     }),
+    z.object({
+      type: z.literal("dine_in"),
+      mode: z.literal("table"),
+      tableCode: z.string().trim().min(40).max(256),
+    }),
   ]),
+  paymentMethod: z.enum(["online", "pay_at_counter"]).default("online"),
   lines: z.array(draftLineSchema).min(1).max(50),
   promoCode: z.string().trim().max(64).optional(),
 });
@@ -207,15 +214,31 @@ export async function quoteOrder(rawInput: QuoteOrderInput): Promise<ServiceResu
       if (!restaurant) {
         return failure(serviceError("RESTAURANT_NOT_FOUND", "Restaurant not found."));
       }
-      if (!restaurant.orderingEnabled) {
-        return failure(serviceError("ORDERING_DISABLED", "Online ordering is unavailable."));
+      const dineIn = input.fulfillment.type === "dine_in";
+      if (dineIn ? !restaurant.dineInEnabled : !restaurant.orderingEnabled) {
+        return failure(serviceError("ORDERING_DISABLED", "This ordering method is unavailable."));
+      }
+      if (input.paymentMethod !== (dineIn ? "pay_at_counter" : "online")) {
+        return failure(
+          serviceError("PAYMENT_METHOD_UNAVAILABLE", "This payment method is unavailable."),
+        );
       }
 
-      const slot = await resolvePickupSelection(db, restaurant, input.fulfillment, now);
-      if (!slot) {
+      const slot =
+        input.fulfillment.type === "pickup"
+          ? await resolvePickupSelection(db, restaurant, input.fulfillment, now)
+          : undefined;
+      if (!dineIn && !slot) {
         return failure(
           serviceError("PICKUP_SLOT_UNAVAILABLE", "That pickup time is no longer available."),
         );
+      }
+      const table =
+        input.fulfillment.type === "dine_in"
+          ? await resolveActiveTable(db, restaurant.id, input.fulfillment.tableCode)
+          : undefined;
+      if (dineIn && !table) {
+        return failure(serviceError("TABLE_CODE_INVALID", "This table code is no longer valid."));
       }
 
       const catalog = await loadPricingItems(
@@ -239,7 +262,12 @@ export async function quoteOrder(rawInput: QuoteOrderInput): Promise<ServiceResu
       await db.insert(orderQuotes).values({
         id: quoteId,
         restaurantId: restaurant.id,
-        pickupSlotId: slot.id,
+        fulfillmentMethod: dineIn ? "dine_in" : "pickup",
+        paymentMethod: input.paymentMethod,
+        pickupSlotId: slot?.id,
+        tableId: table?.id,
+        tableVersion: table?.tokenVersion,
+        tableLabel: table?.label,
         requestHash: await hashObject(input),
         linesSnapshot: priced.data.lines,
         currency: priced.data.totals.currency,
@@ -254,7 +282,10 @@ export async function quoteOrder(rawInput: QuoteOrderInput): Promise<ServiceResu
       return success({
         quoteId,
         expiresAt: expiresAt.toISOString(),
-        fulfillment: { slotId: slot.id, pickupAt: slot.startsAt.toISOString() },
+        fulfillment: table
+          ? { type: "dine_in" as const, tableId: table.id, tableLabel: table.label }
+          : { type: "pickup" as const, slotId: slot!.id, pickupAt: slot!.startsAt.toISOString() },
+        paymentMethod: input.paymentMethod,
         lines: priced.data.lines,
         totals: priced.data.totals,
       });
