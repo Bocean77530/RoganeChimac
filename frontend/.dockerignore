@@ -1,0 +1,10 @@
+.git
+.railway
+node_modules
+.output
+.vinxi
+.tanstack
+data
+output
+*.local
+*.log

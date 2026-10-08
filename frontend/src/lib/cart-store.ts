@@ -2,8 +2,15 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { MenuItem } from "./menu-data";
 import { restaurant } from "./restaurant";
+import { randomUuid } from "./random-uuid";
 
-export type CartModifier = { groupId: string; groupName: string; optionId: string; name: string; priceDelta: number };
+export type CartModifier = {
+  groupId: string;
+  groupName: string;
+  optionId: string;
+  name: string;
+  priceDelta: number;
+};
 
 export type CartLine = {
   lineId: string;
@@ -22,7 +29,7 @@ export type OrderMethod = "pickup" | "delivery";
 type State = {
   lines: CartLine[];
   method: OrderMethod;
-  scheduledFor: string | null; // ISO or null for ASAP
+  scheduledFor: string | null; // +30/+60/+90/+120 minutes or null for ASAP
   deliveryAddress: string;
   promoCode: string | null;
   addLine: (line: Omit<CartLine, "lineId">) => void;
@@ -48,11 +55,14 @@ export const useCart = create<State>()(
       promoCode: null,
       addLine: (line) =>
         set((s) => ({
-          lines: [...s.lines, { ...line, lineId: crypto.randomUUID() }],
+          lines: [...s.lines, { ...line, lineId: randomUuid() }],
         })),
       updateQuantity: (lineId, qty) =>
         set((s) => ({
-          lines: qty <= 0 ? s.lines.filter((l) => l.lineId !== lineId) : s.lines.map((l) => (l.lineId === lineId ? { ...l, quantity: qty } : l)),
+          lines:
+            qty <= 0
+              ? s.lines.filter((l) => l.lineId !== lineId)
+              : s.lines.map((l) => (l.lineId === lineId ? { ...l, quantity: qty } : l)),
         })),
       removeLine: (lineId) => set((s) => ({ lines: s.lines.filter((l) => l.lineId !== lineId) })),
       clear: () => set({ lines: [], promoCode: null }),
@@ -77,15 +87,24 @@ export type Totals = {
 export function computeTotals(state: Pick<State, "lines" | "method" | "promoCode">): Totals {
   const subtotal = state.lines.reduce((s, l) => s + lineTotal(l), 0);
   const itemCount = state.lines.reduce((s, l) => s + l.quantity, 0);
-  const deliveryFee = state.method === "delivery" && subtotal > 0 ? restaurant.ordering.deliveryFee : 0;
+  const deliveryFee =
+    state.method === "delivery" && subtotal > 0 ? restaurant.ordering.deliveryFee : 0;
 
   let discount = 0;
   if (state.promoCode?.toUpperCase() === "SEOUL10" && subtotal >= 2000) {
     discount = Math.round(subtotal * 0.1);
   }
 
-  const belowMinimum = state.method === "delivery" && subtotal > 0 && subtotal < restaurant.ordering.deliveryMinimum;
-  return { subtotal, deliveryFee, discount, total: Math.max(0, subtotal - discount) + deliveryFee, itemCount, belowMinimum };
+  const belowMinimum =
+    state.method === "delivery" && subtotal > 0 && subtotal < restaurant.ordering.deliveryMinimum;
+  return {
+    subtotal,
+    deliveryFee,
+    discount,
+    total: Math.max(0, subtotal - discount) + deliveryFee,
+    itemCount,
+    belowMinimum,
+  };
 }
 
 // Helper to seed a new cart line from a menu item + selected mods
@@ -99,8 +118,24 @@ export function buildLineFromItem(
   for (const group of item.modifiers ?? []) {
     for (const optId of selectedMods[group.id] ?? []) {
       const opt = group.options.find((o) => o.id === optId);
-      if (opt) modifiers.push({ groupId: group.id, groupName: group.name, optionId: opt.id, name: opt.name, priceDelta: opt.priceDelta ?? 0 });
+      if (opt)
+        modifiers.push({
+          groupId: group.id,
+          groupName: group.name,
+          optionId: opt.id,
+          name: opt.name,
+          priceDelta: opt.priceDelta ?? 0,
+        });
     }
   }
-  return { itemId: item.id, name: item.name, koreanName: item.koreanName, image: item.image, basePrice: item.price, quantity, notes, modifiers };
+  return {
+    itemId: item.id,
+    name: item.name,
+    koreanName: item.koreanName,
+    image: item.image,
+    basePrice: item.price,
+    quantity,
+    notes,
+    modifiers,
+  };
 }

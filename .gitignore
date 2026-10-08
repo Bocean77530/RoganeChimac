@@ -14,6 +14,8 @@ dist-ssr
 .vinxi
 .tanstack/**
 .nitro
+frontend/data/
+frontend/output/pdf/
 *.local
 
 # Wrangler / Cloudflare

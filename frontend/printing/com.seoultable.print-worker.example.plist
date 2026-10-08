@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key><string>com.seoultable.print-worker</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/ABSOLUTE/PATH/TO/node</string>
+      <string>/ABSOLUTE/PATH/TO/frontend/printing/worker.mjs</string>
+    </array>
+    <key>WorkingDirectory</key><string>/ABSOLUTE/PATH/TO/frontend</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>ORDER_API_BASE_URL</key><string>http://127.0.0.1:3001</string>
+      <key>PRINT_WORKER_TOKEN</key><string>REPLACE_WITH_PRIVATE_TOKEN</string>
+      <key>KITCHEN_PRINTER</key><string>Brother_HL_L3230CDW_series</string>
+      <key>FRONT_PRINTER</key><string>Brother_HL_L3230CDW_series</string>
+    </dict>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>StandardOutPath</key><string>/tmp/seoultable-print-worker.log</string>
+    <key>StandardErrorPath</key><string>/tmp/seoultable-print-worker-error.log</string>
+  </dict>
+</plist>

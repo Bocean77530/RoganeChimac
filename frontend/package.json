@@ -5,6 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
+    "dev:demo": "node server/demo.mjs",
+    "api": "node server/api.mjs",
+    "start:demo": "node server/production.mjs",
+    "print:worker": "node printing/worker.mjs",
+    "print:railway": "sh printing/start-railway-worker.sh",
+    "test:orders": "node --test server/order-service.test.mjs server/print-jobs.test.mjs server/merchant.test.mjs",
+    "test:printing": "node --test printing/worker.test.mjs",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
