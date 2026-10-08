@@ -8,7 +8,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
@@ -17,6 +17,8 @@ import hero from "@/assets/hero-korean.jpg";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { useCart } from "@/lib/cart-store";
+import { tableCodeFromHref } from "@/lib/table-scan";
 
 function NotFoundComponent() {
   return (
@@ -128,6 +130,12 @@ function RootComponent() {
   const isAdminRoute = useRouterState({
     select: (state) => state.location.pathname.startsWith("/admin"),
   });
+  const href = useRouterState({ select: (state) => state.location.href });
+  const beginTableScan = useCart((state) => state.beginTableScan);
+  useLayoutEffect(() => {
+    const code = tableCodeFromHref(href, window.location.origin);
+    if (code !== null) beginTableScan(code);
+  }, [href, beginTableScan]);
 
   return (
     <QueryClientProvider client={queryClient}>

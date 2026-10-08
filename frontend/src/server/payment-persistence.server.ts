@@ -2,7 +2,7 @@ import { and, desc, eq, ne, sql } from "drizzle-orm";
 import type { ServiceResult } from "@/domain/common";
 import type { CanonicalPosOrder } from "@/domain/integrations";
 import type { OrderStatus, PaymentStatus } from "@/domain/order";
-import { localPrintPayload } from "@/domain/local-print";
+import { dineInLocalPrintPayload, localPrintPayload } from "@/domain/local-print";
 import type { NormalizedPaymentEvent } from "@/domain/payment";
 import { withDatabase, type DatabaseExecutor } from "@/db/client.server";
 import {
@@ -97,7 +97,6 @@ export async function preparePaymentAttempt(input: {
         )[0];
         if (!order) return failure(serviceError("ORDER_NOT_FOUND", "Order not found."));
         if (
-          order.fulfillmentMethod !== "pickup" ||
           order.paymentMethod !== "online" ||
           order.status !== "pending_payment" ||
           !order.paymentDueAt ||
@@ -314,7 +313,10 @@ export async function applyNormalizedPaymentEvent(
             eventType: event.type,
             eventCreatedAt,
             livemode: event.livemode,
-            orderId: event.orderId,
+            // Defer the FK until after the order row is locked. An FK check here
+            // takes a shared row lock and concurrent success events can deadlock
+            // when both later need to update that same order.
+            orderId: null,
             payloadHash: await hashObject(event),
           })
           .onConflictDoNothing({
@@ -352,7 +354,12 @@ export async function applyNormalizedPaymentEvent(
         }
 
         const order = (
-          await tx.select().from(orders).where(eq(orders.id, payment.orderId)).limit(1)
+          await tx
+            .select()
+            .from(orders)
+            .where(eq(orders.id, payment.orderId))
+            .for("update")
+            .limit(1)
         )[0];
         const isRefundEvent =
           event.type === "refund.created" ||
@@ -430,60 +437,84 @@ export async function applyNormalizedPaymentEvent(
             .set({ paymentStatus: "paid", updatedAt: now })
             .where(eq(orders.id, order.id));
 
-          if (eligibleForFulfillment) {
-            const restaurant = await tx
-              .select({ posProvider: restaurants.posProvider })
-              .from(restaurants)
-              .where(eq(restaurants.id, order.restaurantId))
-              .limit(1);
+          if (eligibleForFulfillment && newlyPaid) {
             const detail = await loadAdminOrderDetail(tx, order.id);
-            if (!detail || !restaurant[0]) throw new Error("Cannot build POS integration job");
-            const payload: CanonicalPosOrder = {
-              id: detail.id,
-              orderNumber: detail.orderNumber,
-              requestedFor: detail.requestedFor,
-              customerName: detail.customerName,
-              customerPhone: detail.customerPhone,
-              lines: detail.lines,
-              totals: detail.totals,
-              tender: "PREPAID_ONLINE",
-            };
-            const createdJob = await tx
-              .insert(integrationJobs)
-              .values({
-                id: crypto.randomUUID(),
-                restaurantId: order.restaurantId,
-                orderId: order.id,
-                kind: "pos",
-                provider: restaurant[0].posProvider,
-                idempotencyKey: `pos:${order.id}:paid`,
-                payload,
-                nextAttemptAt: now,
-              })
-              .onConflictDoNothing({
-                target: [integrationJobs.restaurantId, integrationJobs.idempotencyKey],
-              })
-              .returning({ id: integrationJobs.id });
-            posJobCreated = Boolean(createdJob[0]);
-            if (newlyPaid) {
-              for (const destination of ["kitchen", "front"] as const) {
-                await tx
-                  .insert(integrationJobs)
-                  .values({
-                    id: crypto.randomUUID(),
-                    restaurantId: order.restaurantId,
-                    orderId: order.id,
-                    kind: "kitchen_print",
-                    provider: "local_worker",
-                    idempotencyKey: `local_print:${order.id}:${destination}`,
-                    payload: localPrintPayload(detail, destination, now),
-                    nextAttemptAt: now,
-                    maxAttempts: 3,
-                  })
-                  .onConflictDoNothing({
-                    target: [integrationJobs.restaurantId, integrationJobs.idempotencyKey],
-                  });
-              }
+            if (!detail) throw new Error("Cannot build integration job");
+            if (order.fulfillmentMethod === "pickup") {
+              const [restaurant] = await tx
+                .select({ posProvider: restaurants.posProvider })
+                .from(restaurants)
+                .where(eq(restaurants.id, order.restaurantId))
+                .limit(1);
+              if (!restaurant) throw new Error("Restaurant not found");
+              const payload: CanonicalPosOrder = {
+                id: detail.id,
+                orderNumber: detail.orderNumber,
+                requestedFor: detail.requestedFor,
+                customerName: detail.customerName,
+                customerPhone: detail.customerPhone,
+                lines: detail.lines,
+                totals: detail.totals,
+                tender: "PREPAID_ONLINE",
+              };
+              const createdJob = await tx
+                .insert(integrationJobs)
+                .values({
+                  id: crypto.randomUUID(),
+                  restaurantId: order.restaurantId,
+                  orderId: order.id,
+                  kind: "pos",
+                  provider: restaurant.posProvider,
+                  idempotencyKey: `pos:${order.id}:paid`,
+                  payload,
+                  nextAttemptAt: now,
+                })
+                .onConflictDoNothing({
+                  target: [integrationJobs.restaurantId, integrationJobs.idempotencyKey],
+                })
+                .returning({ id: integrationJobs.id });
+              posJobCreated = Boolean(createdJob[0]);
+            }
+            for (const destination of ["kitchen", "front"] as const) {
+              const payload =
+                order.fulfillmentMethod === "dine_in"
+                  ? dineInLocalPrintPayload({
+                      destination,
+                      orderId: order.id,
+                      orderNumber: order.orderNumber,
+                      placedAt: now,
+                      tableId: order.tableId!,
+                      tableLabel: order.tableLabel!,
+                      customerName: order.customerName,
+                      customerPhone: order.customerPhone,
+                      customerNotes: order.customerNotes ?? undefined,
+                      lines: detail.lines,
+                      totals: detail.totals,
+                      payment: {
+                        method: "online",
+                        status: "paid",
+                        label: "PAID ONLINE",
+                        paidAt: now.toISOString(),
+                      },
+                    })
+                  : localPrintPayload(detail, destination, now);
+              await tx
+                .insert(integrationJobs)
+                .values({
+                  id: crypto.randomUUID(),
+                  restaurantId: order.restaurantId,
+                  orderId: order.id,
+                  kind: "kitchen_print",
+                  provider: "local_worker",
+                  idempotencyKey: `local_print:${order.id}:${destination}`,
+                  payloadVersion: order.fulfillmentMethod === "dine_in" ? 2 : 1,
+                  payload,
+                  nextAttemptAt: now,
+                  maxAttempts: 3,
+                })
+                .onConflictDoNothing({
+                  target: [integrationJobs.restaurantId, integrationJobs.idempotencyKey],
+                });
             }
           }
         } else if (event.type === "payment.failed") {

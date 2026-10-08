@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { getPublicOrderByPaymentSessionFn } from "@/api/ordering";
 import { useCart } from "@/lib/cart-store";
 import { formatAUD, restaurant } from "@/lib/restaurant";
+import { paymentConfirmationPollInterval } from "@/lib/order-polling";
 
 export const Route = createFileRoute("/order-confirmation")({
   validateSearch: z.object({ session_id: z.string().optional() }),
@@ -33,10 +34,7 @@ function Confirmation() {
       if (!result.ok) throw new Error(result.error.message);
       return result.data;
     },
-    refetchInterval: (query) => {
-      const paymentStatus = query.state.data?.paymentStatus;
-      return paymentStatus === "pending" || paymentStatus === "unpaid" ? 1_500 : false;
-    },
+    refetchInterval: (query) => paymentConfirmationPollInterval(query.state.data),
   });
 
   const order = orderQuery.data;
@@ -67,7 +65,10 @@ function Confirmation() {
     );
   }
 
-  const isVerifying = order.paymentStatus === "pending" || order.paymentStatus === "unpaid";
+  const isVerifying =
+    order.status !== "expired" &&
+    order.status !== "cancelled" &&
+    (order.paymentStatus === "pending" || order.paymentStatus === "unpaid");
   const needsAttention =
     order.status === "expired" ||
     order.status === "cancelled" ||
@@ -93,7 +94,11 @@ function Confirmation() {
           {confirmationHeading(order.status, order.paymentStatus)}
         </h1>
         <p className="mt-2 text-muted-foreground">
-          {confirmationMessage(order.status, order.paymentStatus, order.maskedEmail)}
+          {confirmationMessage(
+            order.status,
+            order.paymentStatus,
+            order.fulfillmentMethod === "dine_in",
+          )}
         </p>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-3">
@@ -103,13 +108,19 @@ function Confirmation() {
           </div>
           <div className="rounded-2xl border border-border bg-background p-4">
             <p className="flex items-center gap-1 text-xs uppercase tracking-widest text-muted-foreground">
-              <Clock className="h-3 w-3" /> Pickup time
+              <Clock className="h-3 w-3" />{" "}
+              {order.fulfillmentMethod === "dine_in" ? "Table" : "Pickup time"}
             </p>
-            <p className="font-display text-base font-bold">{formatPickupTime(order.pickupAt)}</p>
+            <p className="font-display text-base font-bold">
+              {order.fulfillmentMethod === "dine_in"
+                ? order.tableLabel
+                : formatPickupTime(order.pickupAt)}
+            </p>
           </div>
           <div className="rounded-2xl border border-border bg-background p-4">
             <p className="flex items-center gap-1 text-xs uppercase tracking-widest text-muted-foreground">
-              <MapPin className="h-3 w-3" /> Pickup at
+              <MapPin className="h-3 w-3" />{" "}
+              {order.fulfillmentMethod === "dine_in" ? "Dining at" : "Pickup at"}
             </p>
             <p className="text-sm font-medium">{restaurant.address.line1}</p>
           </div>
@@ -154,6 +165,11 @@ function Confirmation() {
         </div>
 
         <div className="mt-8 flex flex-wrap gap-3">
+          {order.paymentStatus === "failed" && (
+            <Button asChild variant="outline">
+              <Link to="/checkout">Try payment again</Link>
+            </Button>
+          )}
           <Button asChild className="bg-primary text-primary-foreground hover:bg-primary-dark">
             <Link to="/track-order" search={{ t: order.trackingToken }}>
               Track order
@@ -203,20 +219,24 @@ function confirmationHeading(status: string, paymentStatus: string): string {
   return "Thanks — payment confirmed!";
 }
 
-function confirmationMessage(status: string, paymentStatus: string, maskedEmail: string): string {
+function confirmationMessage(status: string, paymentStatus: string, dineIn: boolean): string {
   if ((status === "expired" || status === "cancelled") && paymentStatus === "paid") {
-    return `Payment arrived after this order closed. Please contact the restaurant and quote your order number. Receipt email: ${maskedEmail}.`;
+    return "Payment arrived after this order closed. Please contact the restaurant and quote your order number.";
   }
   if (status === "expired" || status === "cancelled") {
-    return "The pickup slot was released. Your card has not been confirmed for kitchen fulfilment.";
+    return dineIn
+      ? "The table order has closed without a confirmed payment."
+      : "The pickup slot was released. Your card has not been confirmed for kitchen fulfilment.";
   }
   if (paymentStatus === "refunded") return "Stripe has recorded a refund for this order.";
   if (paymentStatus === "failed")
-    return "No kitchen order was created. Please return to the menu and try again.";
+    return "No kitchen print task was created. Please return to checkout and try payment again.";
   if (paymentStatus === "pending" || paymentStatus === "unpaid") {
     return "Do not close this page. The status will update automatically when the signed Stripe webhook arrives.";
   }
-  return `The kitchen can now see your paid pickup order. Receipt email: ${maskedEmail}.`;
+  return dineIn
+    ? "Your paid table order is visible to restaurant staff."
+    : "The kitchen can now see your paid pickup order.";
 }
 
 function formatPickupTime(value: string): string {

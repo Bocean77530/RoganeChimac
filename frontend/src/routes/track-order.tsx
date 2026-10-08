@@ -7,12 +7,13 @@ import { Button } from "@/components/ui/button";
 import { getPublicOrderFn } from "@/api/ordering";
 import type { OrderStatus } from "@/domain/order";
 import { restaurant } from "@/lib/restaurant";
+import { trackingPollInterval } from "@/lib/order-polling";
 
 export const Route = createFileRoute("/track-order")({
   validateSearch: z.object({ t: z.string().optional() }),
   head: () => ({
     meta: [
-      { title: "Track Pickup Order | Rogane Chimac" },
+      { title: "Track Order | Rogane Chimac" },
       { name: "robots", content: "noindex,nofollow" },
     ],
   }),
@@ -57,10 +58,7 @@ function TrackOrder() {
       return result.data;
     },
     refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status === "collected" || status === "cancelled" || status === "expired"
-        ? false
-        : 5_000;
+      return trackingPollInterval(query.state.data);
     },
   });
 
@@ -93,7 +91,8 @@ function TrackOrder() {
 
   const order = orderQuery.data;
   const currentStep = stepByStatus[order.status] ?? -1;
-  const terminalProblem = order.status === "cancelled" || order.status === "expired";
+  const terminalProblem =
+    order.status === "cancelled" || order.status === "expired" || order.paymentStatus === "failed";
   const dineIn = order.fulfillmentMethod === "dine_in";
 
   return (
@@ -102,19 +101,25 @@ function TrackOrder() {
         Order {order.orderNumber}
       </p>
       <h1 className="mt-1 font-display text-3xl font-extrabold md:text-4xl">
-        {statusHeading(order.status, dineIn)}
+        {statusHeading(order.status, order.paymentStatus, dineIn)}
       </h1>
       <p className="mt-2 flex items-center gap-2 text-muted-foreground">
         <Clock className="h-4 w-4" />{" "}
         {dineIn
-          ? `Table ${order.tableLabel ?? ""} · ${order.paymentStatus === "unpaid" ? "Pay at counter" : "Paid"}`
+          ? `Table ${order.tableLabel ?? ""} · ${dineInPaymentLabel(order.status, order.paymentStatus, order.paymentMethod)}`
           : `Pickup ${formatPickupTime(order.pickupAt)} at ${restaurant.address.line1}`}
       </p>
 
       {terminalProblem && (
         <div className="mt-6 flex gap-3 rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm">
           <AlertCircle className="h-5 w-5 shrink-0 text-destructive" />
-          <p>This order is {order.status}. Please call the restaurant for help.</p>
+          <p>
+            {order.paymentStatus === "failed" &&
+            order.status !== "cancelled" &&
+            order.status !== "expired"
+              ? "The payment attempt failed. You can return to checkout to try again."
+              : `This order is ${order.status}. Please call the restaurant for help.`}
+          </p>
         </div>
       )}
 
@@ -155,7 +160,7 @@ function TrackOrder() {
 function TrackingUnavailable({ message }: { message: string }) {
   return (
     <div className="container-page py-20 text-center">
-      <h1 className="font-display text-3xl font-bold">Track your pickup order</h1>
+      <h1 className="font-display text-3xl font-bold">Track your order</h1>
       <p className="mt-2 text-muted-foreground">{message}</p>
       <Button asChild className="mt-6">
         <Link to="/order">Start an order</Link>
@@ -164,7 +169,9 @@ function TrackingUnavailable({ message }: { message: string }) {
   );
 }
 
-function statusHeading(status: OrderStatus, dineIn = false): string {
+function statusHeading(status: OrderStatus, paymentStatus: string, dineIn = false): string {
+  if (status === "pending_payment" && paymentStatus === "failed")
+    return "Payment was not completed";
   switch (status) {
     case "pending_payment":
       return "Waiting for payment";
@@ -185,6 +192,18 @@ function statusHeading(status: OrderStatus, dineIn = false): string {
     case "cancelled":
       return "This order was cancelled";
   }
+}
+
+function dineInPaymentLabel(
+  status: OrderStatus,
+  paymentStatus: string,
+  paymentMethod: string,
+): string {
+  if (status === "cancelled" || status === "expired")
+    return paymentStatus === "paid" ? "Paid after closure — contact restaurant" : "Order closed";
+  if (paymentStatus === "failed") return "Payment attempt failed";
+  if (paymentStatus === "paid") return "Paid";
+  return paymentMethod === "pay_at_counter" ? "Pay at counter" : "Online payment pending";
 }
 
 function formatPickupTime(value: string): string {

@@ -114,6 +114,7 @@ export type PublicOrderView = {
   orderNumber: string;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
+  paymentMethod: "online" | "pay_at_counter";
   fulfillmentMethod: "pickup" | "dine_in";
   tableLabel: string | null;
   pickupAt: string;
@@ -129,6 +130,7 @@ export type AdminOrderSummary = {
   orderNumber: string;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
+  paymentMethod: "online" | "pay_at_counter";
   fulfillmentMethod: "pickup" | "dine_in";
   tableLabel?: string | null;
   placedAt: string;

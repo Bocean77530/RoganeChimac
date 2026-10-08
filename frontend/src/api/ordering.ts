@@ -54,6 +54,18 @@ export const getPickupAvailabilityFn = createServerFn({ method: "GET" })
     return getPickupAvailability(data);
   });
 
+export const resolveTableEntryFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      restaurantSlug: z.string().trim().min(1).max(80),
+      tableCode: z.string().trim().max(256),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { resolveTableEntry } = await import("@/server/table-entry.server");
+    return resolveTableEntry(data);
+  });
+
 export const quoteOrderFn = createServerFn({ method: "POST" })
   .validator(quoteSchema)
   .handler(async ({ data }) => {

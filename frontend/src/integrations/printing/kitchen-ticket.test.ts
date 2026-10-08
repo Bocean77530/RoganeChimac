@@ -8,6 +8,7 @@ const order: AdminOrderDetail = {
   orderNumber: "ST-1001",
   status: "accepted",
   paymentStatus: "paid",
+  paymentMethod: "online",
   fulfillmentMethod: "pickup",
   placedAt: "2026-08-14T09:30:00.000Z",
   requestedFor: "2026-08-14T10:00:00.000Z",

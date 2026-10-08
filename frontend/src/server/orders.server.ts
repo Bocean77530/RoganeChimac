@@ -193,7 +193,7 @@ export async function createPendingOrder(
           }
         } else if (
           quote.fulfillmentMethod === "dine_in" &&
-          quote.paymentMethod === "pay_at_counter"
+          (quote.paymentMethod === "pay_at_counter" || quote.paymentMethod === "online")
         ) {
           const [restaurant] = await tx
             .select({ dineInEnabled: restaurants.dineInEnabled })
@@ -248,6 +248,7 @@ export async function createPendingOrder(
         );
         const paymentDueAt = new Date(now.getTime() + pendingSeconds * 1_000);
         const dineIn = Boolean(table);
+        const payLater = dineIn && quote.paymentMethod === "pay_at_counter";
         const [created] = await tx
           .insert(orders)
           .values({
@@ -260,9 +261,9 @@ export async function createPendingOrder(
             orderNumber: orderNumber(id),
             trackingTokenHash: await hashTrackingToken(trackingToken, secret),
             fulfillmentMethod: dineIn ? "dine_in" : "pickup",
-            paymentMethod: dineIn ? "pay_at_counter" : "online",
-            status: dineIn ? "submitted" : "pending_payment",
-            paymentStatus: dineIn ? "unpaid" : "pending",
+            paymentMethod: quote.paymentMethod,
+            status: payLater ? "submitted" : "pending_payment",
+            paymentStatus: payLater ? "unpaid" : "pending",
             customerName: input.customer.name.trim(),
             customerPhone: input.customer.phone.replace(/[\s()-]/g, ""),
             customerEmail: input.customer.email.trim().toLowerCase(),
@@ -275,8 +276,8 @@ export async function createPendingOrder(
             totalCents: quote.totalCents,
             promotionCode: quote.promotionCode,
             requestedFor: slot?.startsAt ?? now,
-            paymentDueAt: dineIn ? null : paymentDueAt,
-            placedAt: dineIn ? now : null,
+            paymentDueAt: payLater ? null : paymentDueAt,
+            placedAt: payLater ? now : null,
           })
           .returning();
         if (!created) throw new Error("Order insert returned no row");
@@ -313,7 +314,7 @@ export async function createPendingOrder(
           }
         }
 
-        if (table) {
+        if (table && payLater) {
           for (const destination of ["kitchen", "front"] as const) {
             await tx
               .insert(integrationJobs)
@@ -356,9 +357,9 @@ export async function createPendingOrder(
           id: crypto.randomUUID(),
           orderId: created.id,
           fromStatus: null,
-          toStatus: dineIn ? "submitted" : "pending_payment",
+          toStatus: payLater ? "submitted" : "pending_payment",
           actorType: "system",
-          reason: dineIn ? "Dine-in order submitted; pay at counter" : "Checkout created",
+          reason: payLater ? "Dine-in order submitted; pay at counter" : "Checkout created",
           createdAt: now,
         });
         const [consumedQuote] = await tx

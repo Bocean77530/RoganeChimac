@@ -52,7 +52,7 @@ export const orderQuotes = pgTable(
     check(
       "order_quotes_fulfillment_chk",
       sql`(${table.fulfillmentMethod} = 'pickup' and ${table.pickupSlotId} is not null and ${table.tableId} is null and ${table.paymentMethod} = 'online') or
-          (${table.fulfillmentMethod} = 'dine_in' and ${table.pickupSlotId} is null and ${table.tableId} is not null and ${table.tableVersion} is not null and ${table.tableVersion} > 0 and ${table.tableLabel} is not null and ${table.paymentMethod} = 'pay_at_counter')`,
+          (${table.fulfillmentMethod} = 'dine_in' and ${table.pickupSlotId} is null and ${table.tableId} is not null and ${table.tableVersion} is not null and ${table.tableVersion} > 0 and ${table.tableLabel} is not null and ${table.paymentMethod} in ('pay_at_counter', 'online'))`,
     ),
     check("order_quotes_subtotal_chk", sql`${table.subtotalCents} >= 0`),
     check(
@@ -119,7 +119,9 @@ export const orders = pgTable(
     check(
       "orders_fulfillment_chk",
       sql`(${table.fulfillmentMethod} = 'pickup' and ${table.pickupSlotId} is not null and ${table.tableId} is null and ${table.paymentMethod} = 'online' and ${table.paymentDueAt} is not null) or
-          (${table.fulfillmentMethod} = 'dine_in' and ${table.pickupSlotId} is null and ${table.tableId} is not null and ${table.tableLabel} is not null and ${table.paymentMethod} = 'pay_at_counter' and ${table.paymentDueAt} is null)`,
+          (${table.fulfillmentMethod} = 'dine_in' and ${table.pickupSlotId} is null and ${table.tableId} is not null and ${table.tableLabel} is not null and
+            ((${table.paymentMethod} = 'pay_at_counter' and ${table.paymentDueAt} is null) or
+             (${table.paymentMethod} = 'online' and ${table.paymentDueAt} is not null)))`,
     ),
     check("orders_currency_chk", sql`${table.currency} = 'AUD'`),
     check("orders_subtotal_chk", sql`${table.subtotalCents} >= 0`),

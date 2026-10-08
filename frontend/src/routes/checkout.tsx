@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { CreditCard, Loader2, LockKeyhole, MapPin } from "lucide-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -11,13 +11,19 @@ import {
   createStripeCheckoutSessionFn,
   getPickupAvailabilityFn,
   quoteOrderFn,
+  resolveTableEntryFn,
 } from "@/api/ordering";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import type { OrderTotalsSnapshot } from "@/domain/order";
+import type { OrderTotalsSnapshot, QuoteOrderInput } from "@/domain/order";
 import { computeTotals, useCart } from "@/lib/cart-store";
+import {
+  clearPendingCheckout,
+  readPendingCheckout,
+  savePendingCheckout,
+} from "@/lib/checkout-attempt";
 import { formatAUD, restaurant } from "@/lib/restaurant";
 
 const RESTAURANT_SLUG = restaurant.slug;
@@ -26,10 +32,10 @@ const TERMS_VERSION = "2026-08-14";
 export const Route = createFileRoute("/checkout")({
   head: () => ({
     meta: [
-      { title: "Secure Pickup Checkout | Rogane Chimac" },
+      { title: "Secure Checkout | Rogane Chimac" },
       {
         name: "description",
-        content: "Choose a pickup time and pay securely with Stripe.",
+        content: "Choose pickup or a verified table and complete your order.",
       },
       { name: "robots", content: "noindex,nofollow" },
     ],
@@ -50,28 +56,30 @@ type PaymentStage = {
   trackingToken: string;
   sessionId: string;
   clientSecret: string;
-  pickupAt: string;
+  fulfillment: { type: "pickup"; pickupAt: string } | { type: "dine_in"; tableLabel: string };
   totals: OrderTotalsSnapshot;
 };
 
 function CheckoutPage() {
   const navigate = useNavigate();
-  const { lines, promoCode, setPromoCode } = useCart();
+  const { lines, promoCode, setPromoCode, fulfillment, clear } = useCart();
+  const dineIn = fulfillment.type === "dine_in";
   const previewTotals = computeTotals({
     lines,
     promoCode,
   });
-  const checkoutAttemptId = useRef<string | null>(null);
 
   const [form, setForm] = useState({ name: "", phone: "", email: "", notes: "" });
   const [terms, setTerms] = useState(false);
   const [pickupChoice, setPickupChoice] = useState("asap");
+  const [paymentMethod, setPaymentMethod] = useState<"online" | "pay_at_counter">("online");
   const [promoInput, setPromoInput] = useState(promoCode ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [paymentStage, setPaymentStage] = useState<PaymentStage | null>(null);
 
   const availabilityQuery = useQuery({
     queryKey: ["pickup-availability", RESTAURANT_SLUG],
+    enabled: fulfillment.type === "pickup",
     queryFn: async () => {
       const result = await getPickupAvailabilityFn({
         data: { restaurantSlug: RESTAURANT_SLUG },
@@ -83,8 +91,50 @@ function CheckoutPage() {
     refetchOnWindowFocus: true,
   });
 
+  const tableQuery = useQuery({
+    queryKey: [
+      "table-entry",
+      RESTAURANT_SLUG,
+      fulfillment.type === "dine_in" ? fulfillment.tableCode : null,
+    ],
+    enabled: dineIn,
+    queryFn: async () => {
+      if (fulfillment.type !== "dine_in") throw new Error("Table context is missing.");
+      const result = await resolveTableEntryFn({
+        data: { restaurantSlug: RESTAURANT_SLUG, tableCode: fulfillment.tableCode },
+      });
+      if (!result.ok) throw new Error(result.error.message);
+      if (result.data.tableId !== fulfillment.tableId)
+        throw new Error("This table code has changed. Please scan it again.");
+      return result.data;
+    },
+    retry: false,
+    staleTime: 0,
+  });
+
   const slots = availabilityQuery.data?.slots ?? [];
-  const canOrder = availabilityQuery.data?.orderingEnabled === true && slots.length > 0;
+  const canOrder =
+    fulfillment.type === "table_pending"
+      ? false
+      : dineIn
+        ? tableQuery.isSuccess
+        : availabilityQuery.data?.orderingEnabled === true && slots.length > 0;
+
+  if (fulfillment.type === "table_pending") {
+    return (
+      <div className="container-page py-20 text-center">
+        <h1 className="font-display text-3xl font-bold">Table code needs verification</h1>
+        <p className="mt-2 text-muted-foreground">
+          Open the table menu and wait for the code to be checked before checkout.
+        </p>
+        <Button asChild className="mt-6">
+          <Link to="/order" search={{ table: fulfillment.tableCode }}>
+            Verify table
+          </Link>
+        </Button>
+      </div>
+    );
+  }
 
   if (paymentStage) {
     return (
@@ -95,7 +145,9 @@ function CheckoutPage() {
           </p>
           <h1 className="mt-1 font-display text-3xl font-extrabold">Complete secure payment</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Your pickup slot is held while this Stripe Sandbox checkout is open.
+            {paymentStage.fulfillment.type === "pickup"
+              ? "Your pickup slot is held while this Stripe Sandbox checkout is open."
+              : `Table ${paymentStage.fulfillment.tableLabel} · Stripe Sandbox payment`}
           </p>
           <StripeEmbeddedCheckout
             clientSecret={paymentStage.clientSecret}
@@ -113,7 +165,9 @@ function CheckoutPage() {
           <h2 className="font-display text-lg font-bold">Payment summary</h2>
           <p className="mt-3 flex items-start gap-2 text-sm text-muted-foreground">
             <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
-            Pickup {formatPickupTime(paymentStage.pickupAt)} at {restaurant.address.line1}
+            {paymentStage.fulfillment.type === "pickup"
+              ? `Pickup ${formatPickupTime(paymentStage.fulfillment.pickupAt)} at ${restaurant.address.line1}`
+              : `Table ${paymentStage.fulfillment.tableLabel}`}
           </p>
           <div className="mt-5 space-y-1 border-t border-border pt-4 text-sm">
             <div className="flex justify-between">
@@ -169,36 +223,55 @@ function CheckoutPage() {
       return;
     }
     if (!canOrder) {
-      toast.error("No pickup times are currently available");
+      toast.error(
+        dineIn
+          ? "This table code is unavailable. Please scan it again."
+          : "No pickup times are currently available",
+      );
       return;
     }
 
     setSubmitting(true);
     try {
-      const quote = await quoteOrderFn({
-        data: {
-          restaurantSlug: RESTAURANT_SLUG,
-          fulfillment:
-            pickupChoice === "asap"
+      const quoteInput: QuoteOrderInput = {
+        restaurantSlug: RESTAURANT_SLUG,
+        fulfillment:
+          fulfillment.type === "dine_in"
+            ? { type: "dine_in", mode: "table", tableCode: fulfillment.tableCode }
+            : pickupChoice === "asap"
               ? { type: "pickup", mode: "asap" }
               : { type: "pickup", mode: "scheduled", slotId: pickupChoice },
-          lines: lines.map((line) => ({
-            clientLineId: line.lineId,
-            menuItemId: line.itemId,
-            quantity: line.quantity,
-            modifierOptionIds: line.modifiers.map((modifier) => modifier.optionId),
-            notes: line.notes,
-          })),
-          promoCode: promoCode || undefined,
-        },
+        paymentMethod: dineIn ? paymentMethod : "online",
+        lines: lines.map((line) => ({
+          clientLineId: line.lineId,
+          menuItemId: line.itemId,
+          quantity: line.quantity,
+          modifierOptionIds: line.modifiers.map((modifier) => modifier.optionId),
+          notes: line.notes,
+        })),
+        promoCode: promoCode || undefined,
+      };
+      const fingerprint = JSON.stringify({
+        quoteInput,
+        customer: parsed.data,
+        termsVersion: TERMS_VERSION,
       });
-      if (!quote.ok) throw new CheckoutError(quote.error.message);
-
-      checkoutAttemptId.current ??= crypto.randomUUID();
+      let pending = readPendingCheckout(sessionStorage, fingerprint);
+      if (!pending) {
+        const quote = await quoteOrderFn({ data: quoteInput });
+        if (!quote.ok) throw new CheckoutError(quote.error.message);
+        pending = {
+          fingerprint,
+          quoteId: quote.data.quoteId,
+          expiresAt: quote.data.expiresAt,
+          attemptId: crypto.randomUUID(),
+        };
+        savePendingCheckout(sessionStorage, pending);
+      }
       const order = await createPendingOrderFn({
         data: {
-          quoteId: quote.data.quoteId,
-          attemptId: checkoutAttemptId.current,
+          quoteId: pending.quoteId,
+          attemptId: pending.attemptId,
           customer: {
             name: parsed.data.name,
             phone: parsed.data.phone,
@@ -210,8 +283,11 @@ function CheckoutPage() {
         },
       });
       if (!order.ok) throw new CheckoutError(order.error.message);
-      if (order.data.fulfillment.type !== "pickup") {
-        throw new CheckoutError("This checkout is only available for pickup orders.");
+      if (dineIn && paymentMethod === "pay_at_counter") {
+        clearPendingCheckout(sessionStorage);
+        clear();
+        await navigate({ to: "/track-order", search: { t: order.data.trackingToken } });
+        return;
       }
 
       const checkout = await createStripeCheckoutSessionFn({
@@ -230,7 +306,7 @@ function CheckoutPage() {
         trackingToken: order.data.trackingToken,
         sessionId: checkout.data.session.sessionId,
         clientSecret: checkout.data.session.launch.clientSecret,
-        pickupAt: order.data.fulfillment.pickupAt,
+        fulfillment: order.data.fulfillment,
         totals: order.data.totals,
       });
     } catch (error) {
@@ -248,40 +324,56 @@ function CheckoutPage() {
         <h1 className="font-display text-3xl font-extrabold md:text-4xl">Checkout</h1>
 
         <section className="rounded-3xl border border-border bg-card p-5">
-          <h2 className="font-display text-lg font-bold">1. Pickup time</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Pickup from {restaurant.address.line1}, {restaurant.address.suburb}.
-          </p>
-          <div className="mt-4">
-            <Label htmlFor="pickup-time">When</Label>
-            <select
-              id="pickup-time"
-              value={pickupChoice}
-              onChange={(event) => setPickupChoice(event.target.value)}
-              disabled={availabilityQuery.isPending || !canOrder}
-              className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option value="asap">
-                {slots[0]
-                  ? `ASAP — ${slots[0].localLabel}`
-                  : availabilityQuery.isPending
-                    ? "Loading pickup times…"
-                    : "No pickup times available"}
-              </option>
-              {slots.slice(1).map((slot) => (
-                <option key={slot.id} value={slot.id}>
-                  {slot.localLabel} · {slot.remaining} remaining
-                </option>
-              ))}
-            </select>
-            {availabilityQuery.isError && (
-              <p className="mt-2 text-sm text-destructive">
-                {availabilityQuery.error instanceof Error
-                  ? availabilityQuery.error.message
-                  : "Pickup times could not be loaded."}
+          <h2 className="font-display text-lg font-bold">
+            1. {dineIn ? "Your table" : "Pickup time"}
+          </h2>
+          {dineIn ? (
+            <p className="mt-1 text-sm text-muted-foreground">
+              {tableQuery.isSuccess
+                ? `Table ${tableQuery.data.tableLabel}`
+                : tableQuery.isError
+                  ? tableQuery.error instanceof Error
+                    ? tableQuery.error.message
+                    : "Please scan the code again."
+                  : "Checking your table code…"}
+            </p>
+          ) : (
+            <>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Pickup from {restaurant.address.line1}, {restaurant.address.suburb}.
               </p>
-            )}
-          </div>
+              <div className="mt-4">
+                <Label htmlFor="pickup-time">When</Label>
+                <select
+                  id="pickup-time"
+                  value={pickupChoice}
+                  onChange={(event) => setPickupChoice(event.target.value)}
+                  disabled={availabilityQuery.isPending || !canOrder}
+                  className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="asap">
+                    {slots[0]
+                      ? `ASAP — ${slots[0].localLabel}`
+                      : availabilityQuery.isPending
+                        ? "Loading pickup times…"
+                        : "No pickup times available"}
+                  </option>
+                  {slots.slice(1).map((slot) => (
+                    <option key={slot.id} value={slot.id}>
+                      {slot.localLabel} · {slot.remaining} remaining
+                    </option>
+                  ))}
+                </select>
+                {availabilityQuery.isError && (
+                  <p className="mt-2 text-sm text-destructive">
+                    {availabilityQuery.error instanceof Error
+                      ? availabilityQuery.error.message
+                      : "Pickup times could not be loaded."}
+                  </p>
+                )}
+              </div>
+            </>
+          )}
         </section>
 
         <section className="rounded-3xl border border-border bg-card p-5">
@@ -324,7 +416,7 @@ function CheckoutPage() {
                 value={form.notes}
                 onChange={(event) => setForm({ ...form, notes: event.target.value })}
                 maxLength={300}
-                placeholder="Allergies or pickup notes"
+                placeholder="Allergies or order notes"
               />
             </div>
           </div>
@@ -334,10 +426,34 @@ function CheckoutPage() {
           <div className="flex items-start gap-3">
             <CreditCard className="mt-0.5 h-5 w-5 text-primary" />
             <div>
-              <h2 className="font-display text-lg font-bold">3. Pay online</h2>
+              <h2 className="font-display text-lg font-bold">3. Payment</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Secure Stripe Sandbox payment. Eligible wallets are shown automatically by Stripe.
+                {dineIn
+                  ? "Choose secure Stripe Sandbox payment or pay at the counter."
+                  : "Secure Stripe Sandbox payment. Eligible wallets are shown automatically by Stripe."}
               </p>
+              {dineIn && (
+                <div className="mt-3 flex flex-wrap gap-4 text-sm">
+                  <label>
+                    <input
+                      type="radio"
+                      name="payment-method"
+                      checked={paymentMethod === "online"}
+                      onChange={() => setPaymentMethod("online")}
+                    />{" "}
+                    Pay online
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="payment-method"
+                      checked={paymentMethod === "pay_at_counter"}
+                      onChange={() => setPaymentMethod("pay_at_counter")}
+                    />{" "}
+                    Pay at counter
+                  </label>
+                </div>
+              )}
             </div>
           </div>
         </section>
@@ -413,20 +529,22 @@ function CheckoutPage() {
             <span>{formatAUD(previewTotals.total)}</span>
           </div>
           <p className="pt-2 text-xs text-muted-foreground">
-            The server validates current menu prices, modifiers, promo eligibility and pickup
-            capacity before Stripe opens.
+            The server validates current menu prices, modifiers and promo eligibility
+            {dineIn ? " and your table code" : " and pickup capacity"} before the order is placed.
           </p>
         </div>
 
         <Button
           onClick={continueToPayment}
-          disabled={submitting || availabilityQuery.isPending || !canOrder}
+          disabled={submitting || !canOrder}
           className="mt-5 h-12 w-full bg-primary text-base font-semibold text-primary-foreground hover:bg-primary-dark"
         >
           {submitting ? (
             <span className="inline-flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" /> Preparing payment…
+              <Loader2 className="h-4 w-4 animate-spin" /> Placing order…
             </span>
+          ) : dineIn && paymentMethod === "pay_at_counter" ? (
+            "Place order · pay at counter"
           ) : (
             "Continue to secure payment"
           )}

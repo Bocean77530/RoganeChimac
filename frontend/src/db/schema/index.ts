@@ -1,4 +1,5 @@
 export * from "./enums";
+export * from "./counter-payments";
 export * from "./events";
 export * from "./idempotency";
 export * from "./integrations";

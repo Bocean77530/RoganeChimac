@@ -9,6 +9,7 @@ import {
   uniqueIndex,
   uuid,
   varchar,
+  timestamp,
 } from "drizzle-orm/pg-core";
 import { restaurants } from "./restaurants";
 
@@ -31,4 +32,14 @@ export const restaurantTables = pgTable(
     check("restaurant_tables_code_chk", sql`length(trim(${table.code})) > 0`),
     check("restaurant_tables_label_chk", sql`length(trim(${table.label})) > 0`),
   ],
+);
+
+export const tableCodeRateLimits = pgTable(
+  "table_code_rate_limits",
+  {
+    keyHash: varchar("key_hash", { length: 64 }).primaryKey(),
+    windowStart: timestamp("window_start", { withTimezone: true, mode: "date" }).notNull(),
+    attemptCount: integer("attempt_count").notNull().default(0),
+  },
+  (table) => [check("table_code_rate_limits_count_chk", sql`${table.attemptCount} >= 0`)],
 );

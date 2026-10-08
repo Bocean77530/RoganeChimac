@@ -320,6 +320,7 @@ function createMockOrder(input: MockOrderInput): AdminOrderView {
     orderNumber: input.orderNumber,
     status: input.status,
     paymentStatus: "paid",
+    paymentMethod: "online",
     fulfillmentMethod: "pickup",
     placedAt: input.placedAt,
     requestedFor: input.requestedFor,

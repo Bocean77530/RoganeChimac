@@ -2,7 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { ServiceResult } from "@/domain/common";
 import type { OrderStatus } from "@/domain/order";
 import type { DatabaseExecutor } from "@/db/client.server";
-import { orderStatusEvents, orders, pickupSlots } from "@/db/schema";
+import { integrationJobs, orderStatusEvents, orders, pickupSlots } from "@/db/schema";
 import {
   abortWith,
   failure,
@@ -100,6 +100,23 @@ export async function applyOrderTransition(
         updatedAt: now,
       })
       .where(eq(pickupSlots.id, current.pickupSlotId));
+  }
+
+  if (
+    input.toStatus === "cancelled" &&
+    current.fulfillmentMethod === "dine_in" &&
+    current.paymentMethod === "pay_at_counter" &&
+    current.paymentStatus === "unpaid"
+  ) {
+    await db
+      .update(integrationJobs)
+      .set({ status: "cancelled", updatedAt: now })
+      .where(
+        and(
+          eq(integrationJobs.orderId, current.id),
+          sql`${integrationJobs.status} in ('queued', 'retry_scheduled')`,
+        ),
+      );
   }
 
   await db.insert(orderStatusEvents).values({

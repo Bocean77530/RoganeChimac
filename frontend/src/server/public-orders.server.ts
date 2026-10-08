@@ -35,6 +35,7 @@ async function publicOrderView(
     orderNumber: order.orderNumber,
     status: order.status,
     paymentStatus: order.paymentStatus,
+    paymentMethod: order.paymentMethod as "online" | "pay_at_counter",
     fulfillmentMethod: order.fulfillmentMethod as "pickup" | "dine_in",
     tableLabel: order.tableLabel,
     pickupAt: order.requestedFor.toISOString(),

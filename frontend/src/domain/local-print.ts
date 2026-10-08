@@ -32,7 +32,9 @@ export type DineInLocalPrintPayload = {
   placedAt: string;
   method: "dine_in";
   table: { id: string; label: string };
-  payment: { method: "pay_at_counter"; status: "unpaid"; label: "PAY AT COUNTER" };
+  payment:
+    | { method: "pay_at_counter"; status: "unpaid"; label: "PAY AT COUNTER" }
+    | { method: "online"; status: "paid"; label: "PAID ONLINE"; paidAt: string };
   customer: { name: string; phone: string };
   items: PickupLocalPrintPayload["items"];
   orderNotes?: string;
@@ -84,6 +86,7 @@ export function dineInLocalPrintPayload(input: {
   customerNotes?: string;
   lines: PricedLineSnapshot[];
   totals: AdminOrderDetail["totals"];
+  payment?: DineInLocalPrintPayload["payment"];
 }): DineInLocalPrintPayload {
   return {
     schemaVersion: 2,
@@ -93,7 +96,11 @@ export function dineInLocalPrintPayload(input: {
     placedAt: input.placedAt.toISOString(),
     method: "dine_in",
     table: { id: input.tableId, label: input.tableLabel },
-    payment: { method: "pay_at_counter", status: "unpaid", label: "PAY AT COUNTER" },
+    payment: input.payment ?? {
+      method: "pay_at_counter",
+      status: "unpaid",
+      label: "PAY AT COUNTER",
+    },
     customer: { name: input.customerName, phone: input.customerPhone },
     items: input.lines.map((line) => ({
       quantity: line.quantity,

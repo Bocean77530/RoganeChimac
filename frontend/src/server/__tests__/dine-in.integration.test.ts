@@ -4,12 +4,16 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDatabase } from "@/db/client.server";
+import { paymentConfirmationPollInterval, trackingPollInterval } from "@/lib/order-polling";
 import { createPendingOrder } from "../orders.server";
 import { claimLocalPrintJob, listLocalPrintJobs } from "../local-print-jobs.server";
 import { applyNormalizedPaymentEvent, preparePaymentAttempt } from "../payment-persistence.server";
 import { quoteOrder } from "../pricing.server";
 import { signTableCode } from "../table-codes.server";
 import { transitionOrderStatus } from "../order-transitions.server";
+import { recordCounterPayment, updateMerchantOrder } from "../merchant-orders.server";
+import { resolveTableEntry } from "../table-entry.server";
+import { getPublicOrder } from "../public-orders.server";
 
 const testUrl = process.env.TEST_DATABASE_URL;
 const safeTestUrl = (() => {
@@ -62,6 +66,7 @@ suite("dine-in phase one against a disposable local PostgreSQL database", () => 
     process.env.DATABASE_URL = testUrl;
     process.env.DINE_IN_TABLE_CODE_SECRET = secret;
     process.env.ORDER_TRACKING_TOKEN_SECRET = "phase-one-tracking-secret-at-least-32-characters";
+    process.env.ADMIN_ACCESS_TOKEN = "phase-two-admin-token-at-least-24-chars";
     client = new pg.Client({ connectionString: testUrl });
     await client.connect();
     await client.query("DROP SCHEMA public CASCADE");
@@ -114,6 +119,11 @@ suite("dine-in phase one against a disposable local PostgreSQL database", () => 
     const newMigration = readdirSync(migrationFolder).find((name) => /^0003_.*\.sql$/.test(name));
     if (!newMigration) throw new Error("Dine-in migration 0003 is missing");
     await applyMigration(newMigration);
+    const phaseTwoMigration = readdirSync(migrationFolder).find((name) =>
+      /^0004_.*\.sql$/.test(name),
+    );
+    if (!phaseTwoMigration) throw new Error("Dine-in migration 0004 is missing");
+    await applyMigration(phaseTwoMigration);
 
     await client.query(
       "UPDATE restaurants SET dine_in_enabled = true, pickup_booking_days = 2, pickup_prep_minutes = 0 WHERE id = $1",
@@ -215,7 +225,7 @@ suite("dine-in phase one against a disposable local PostgreSQL database", () => 
           },
         ],
       }),
-    ).toMatchObject({ ok: false, error: { code: "PAYMENT_METHOD_UNAVAILABLE" } });
+    ).toMatchObject({ ok: false, error: { code: "TABLE_CODE_INVALID" } });
   });
 
   it("submits one unpaid table order and exactly two v2 jobs without reserving pickup capacity", async () => {
@@ -434,5 +444,275 @@ suite("dine-in phase one against a disposable local PostgreSQL database", () => 
       [order.data.id],
     );
     expect(afterDuplicate.rows).toHaveLength(2);
+  });
+
+  it("resolves signed table codes and rate limits repeated lookup", async () => {
+    const code = signTableCode({ restaurantId, tableId, tokenVersion: 3 });
+    expect(await resolveTableEntry({ restaurantSlug: "phase1", tableCode: code })).toMatchObject({
+      ok: true,
+      data: { tableId, tableLabel: "Table 7" },
+    });
+    expect(
+      await resolveTableEntry({ restaurantSlug: "phase1", tableCode: `${code.slice(0, -1)}x` }),
+    ).toMatchObject({ ok: false, error: { code: "TABLE_CODE_INVALID" } });
+    const before = Number(
+      (await client.query("SELECT count(*) AS count FROM table_code_rate_limits")).rows[0].count,
+    );
+    for (let index = 0; index < 40; index++) {
+      await resolveTableEntry({
+        restaurantSlug: `unknown-${index}`,
+        tableCode: `bad-${index}-${"a".repeat(42)}`,
+      });
+    }
+    const after = Number(
+      (await client.query("SELECT count(*) AS count FROM table_code_rate_limits")).rows[0].count,
+    );
+    expect(after).toBe(before);
+
+    const throttledTableId = randomUUID();
+    await client.query(
+      "INSERT INTO restaurant_tables (id, restaurant_id, code, label) VALUES ($1, $2, 'T99', 'Table 99')",
+      [throttledTableId, restaurantId],
+    );
+    const throttledCode = signTableCode({
+      restaurantId,
+      tableId: throttledTableId,
+      tokenVersion: 1,
+    });
+    for (let index = 0; index < 30; index++) {
+      expect(
+        (await resolveTableEntry({ restaurantSlug: "phase1", tableCode: throttledCode })).ok,
+      ).toBe(true);
+    }
+    expect(
+      await resolveTableEntry({ restaurantSlug: "phase1", tableCode: throttledCode }),
+    ).toMatchObject({ ok: false, error: { code: "RATE_LIMITED" } });
+  });
+
+  it("keeps dine-in online unprinted until verified payment and never creates a POS job", async () => {
+    const quote = await quoteOrder({
+      restaurantSlug: "phase1",
+      fulfillment: {
+        type: "dine_in",
+        mode: "table",
+        tableCode: signTableCode({ restaurantId, tableId, tokenVersion: 3 }),
+      },
+      paymentMethod: "online",
+      lines: [
+        {
+          clientLineId: randomUUID(),
+          menuItemId: "bibimbap",
+          quantity: 1,
+          modifierOptionIds: [],
+          notes: "No onion",
+        },
+      ],
+    });
+    expect(quote.ok).toBe(true);
+    if (!quote.ok) return;
+    const order = await createPendingOrder({
+      quoteId: quote.data.quoteId,
+      attemptId: randomUUID(),
+      customer: { name: "Online Guest", phone: "0400000000", email: "online@example.com" },
+      notes: "No peanuts",
+      termsAccepted: true,
+      termsVersion: "v1",
+    });
+    expect(order).toMatchObject({
+      ok: true,
+      data: {
+        status: "pending_payment",
+        paymentStatus: "pending",
+        fulfillment: { type: "dine_in", tableLabel: "Table 7" },
+      },
+    });
+    if (!order.ok) return;
+    expect(
+      (await client.query("SELECT id FROM integration_jobs WHERE order_id = $1", [order.data.id]))
+        .rows,
+    ).toHaveLength(0);
+    expect(
+      await updateMerchantOrder({
+        adminToken: process.env.ADMIN_ACCESS_TOKEN!,
+        orderId: order.data.id,
+        expectedVersion: 1,
+        toStatus: "cancelled",
+      }),
+    ).toMatchObject({ ok: false, error: { code: "INVALID_STATUS_TRANSITION" } });
+    expect(
+      (await preparePaymentAttempt({ orderId: order.data.id, provider: "stripe", livemode: false }))
+        .ok,
+    ).toBe(true);
+    const event = {
+      provider: "stripe",
+      providerEventId: randomUUID(),
+      type: "payment.failed" as "payment.failed" | "payment.succeeded",
+      eventCreatedAt: new Date().toISOString(),
+      orderId: order.data.id,
+      money: { currency: "AUD" as const, amountCents: order.data.totals.totalCents },
+      livemode: false,
+    };
+    expect((await applyNormalizedPaymentEvent(event)).ok).toBe(true);
+    const failedView = await getPublicOrder({ trackingToken: order.data.trackingToken });
+    expect(failedView).toMatchObject({
+      ok: true,
+      data: { status: "pending_payment", paymentStatus: "failed" },
+    });
+    if (failedView.ok) {
+      expect(trackingPollInterval(failedView.data)).toBe(10_000);
+      expect(paymentConfirmationPollInterval(failedView.data)).toBe(10_000);
+    }
+    expect(
+      (await client.query("SELECT id FROM integration_jobs WHERE order_id = $1", [order.data.id]))
+        .rows,
+    ).toHaveLength(0);
+    const concurrentSuccesses = await Promise.all(
+      [1, 2].map(() =>
+        applyNormalizedPaymentEvent({
+          ...event,
+          providerEventId: randomUUID(),
+          type: "payment.succeeded",
+        }),
+      ),
+    );
+    expect(concurrentSuccesses.map((result) => result.ok)).toEqual([true, true]);
+    const paidView = await getPublicOrder({ trackingToken: order.data.trackingToken });
+    expect(paidView).toMatchObject({ ok: true, data: { status: "paid", paymentStatus: "paid" } });
+    if (paidView.ok) expect(paymentConfirmationPollInterval(paidView.data)).toBe(false);
+    const jobs = await client.query(
+      "SELECT kind, payload_version, payload FROM integration_jobs WHERE order_id = $1 ORDER BY idempotency_key",
+      [order.data.id],
+    );
+    expect(jobs.rows).toHaveLength(2);
+    expect(
+      jobs.rows.every((row) => row.kind === "kitchen_print" && row.payload_version === 2),
+    ).toBe(true);
+    expect(jobs.rows.map((row) => row.payload.destination)).toEqual(["front", "kitchen"]);
+    expect(jobs.rows[0].payload).toMatchObject({
+      table: { id: tableId, label: "Table 7" },
+      payment: { method: "online", status: "paid", label: "PAID ONLINE" },
+      orderNotes: "No peanuts",
+    });
+    expect(jobs.rows[0].payload.payment.paidAt).toEqual(expect.any(String));
+    expect(
+      (
+        await applyNormalizedPaymentEvent({
+          ...event,
+          providerEventId: randomUUID(),
+          type: "payment.succeeded",
+        })
+      ).ok,
+    ).toBe(true);
+    expect(
+      (await client.query("SELECT id FROM integration_jobs WHERE order_id = $1", [order.data.id]))
+        .rows,
+    ).toHaveLength(2);
+  });
+
+  it("records one audited counter payment without creating extra print jobs", async () => {
+    const quote = await quoteTable(signTableCode({ restaurantId, tableId, tokenVersion: 3 }));
+    if (!quote.ok) throw new Error("quote failed");
+    const order = await createPendingOrder({
+      quoteId: quote.data.quoteId,
+      attemptId: randomUUID(),
+      customer: { name: "Counter Guest", phone: "0400000000", email: "counter@example.com" },
+      termsAccepted: true,
+      termsVersion: "v1",
+    });
+    if (!order.ok) throw new Error("order failed");
+    const input = {
+      adminToken: process.env.ADMIN_ACCESS_TOKEN!,
+      orderId: order.data.id,
+      idempotencyKey: randomUUID(),
+      method: "cash" as const,
+      operatorName: "Staff One",
+    };
+    const results = await Promise.all([recordCounterPayment(input), recordCounterPayment(input)]);
+    expect(results.map((result) => result.ok)).toEqual([true, true]);
+    expect((await recordCounterPayment({ ...input, idempotencyKey: randomUUID() })).ok).toBe(false);
+    const records = await client.query(
+      "SELECT method, amount_cents, operator_name FROM counter_payment_records WHERE order_id = $1",
+      [order.data.id],
+    );
+    expect(records.rows).toHaveLength(1);
+    expect(records.rows[0]).toMatchObject({
+      method: "cash",
+      amount_cents: order.data.totals.totalCents,
+      operator_name: "Staff One",
+    });
+    expect(
+      (await client.query("SELECT id FROM integration_jobs WHERE order_id = $1", [order.data.id]))
+        .rows,
+    ).toHaveLength(2);
+  });
+
+  it("leaves an expired dine-in online order without print jobs", async () => {
+    const quote = await quoteOrder({
+      restaurantSlug: "phase1",
+      fulfillment: {
+        type: "dine_in",
+        mode: "table",
+        tableCode: signTableCode({ restaurantId, tableId, tokenVersion: 3 }),
+      },
+      paymentMethod: "online",
+      lines: [
+        { clientLineId: randomUUID(), menuItemId: "bibimbap", quantity: 1, modifierOptionIds: [] },
+      ],
+    });
+    if (!quote.ok) throw new Error("quote failed");
+    const order = await createPendingOrder({
+      quoteId: quote.data.quoteId,
+      attemptId: randomUUID(),
+      customer: { name: "Expired Guest", phone: "0400000000", email: "expired@example.com" },
+      termsAccepted: true,
+      termsVersion: "v1",
+    });
+    if (!order.ok) throw new Error("order failed");
+    expect(
+      (await preparePaymentAttempt({ orderId: order.data.id, provider: "stripe", livemode: false }))
+        .ok,
+    ).toBe(true);
+    const expired = await applyNormalizedPaymentEvent({
+      provider: "stripe",
+      providerEventId: randomUUID(),
+      type: "session.expired",
+      eventCreatedAt: new Date().toISOString(),
+      orderId: order.data.id,
+      livemode: false,
+    });
+    expect(expired).toMatchObject({ ok: true, data: { orderStatus: "expired" } });
+    expect(
+      (await client.query("SELECT id FROM integration_jobs WHERE order_id = $1", [order.data.id]))
+        .rows,
+    ).toHaveLength(0);
+  });
+
+  it("cancels only unclaimed unpaid table jobs", async () => {
+    const quote = await quoteTable(signTableCode({ restaurantId, tableId, tokenVersion: 3 }));
+    if (!quote.ok) throw new Error("quote failed");
+    const order = await createPendingOrder({
+      quoteId: quote.data.quoteId,
+      attemptId: randomUUID(),
+      customer: { name: "Cancel Guest", phone: "0400000000", email: "cancel@example.com" },
+      termsAccepted: true,
+      termsVersion: "v1",
+    });
+    if (!order.ok) throw new Error("order failed");
+    await client.query(
+      "UPDATE integration_jobs SET status = 'processing' WHERE order_id = $1 AND idempotency_key LIKE '%:kitchen'",
+      [order.data.id],
+    );
+    const result = await updateMerchantOrder({
+      adminToken: process.env.ADMIN_ACCESS_TOKEN!,
+      orderId: order.data.id,
+      expectedVersion: 1,
+      toStatus: "cancelled",
+    });
+    expect(result.ok).toBe(true);
+    const jobs = await client.query(
+      "SELECT status FROM integration_jobs WHERE order_id = $1 ORDER BY idempotency_key",
+      [order.data.id],
+    );
+    expect(jobs.rows.map((row) => row.status)).toEqual(["cancelled", "processing"]);
   });
 });

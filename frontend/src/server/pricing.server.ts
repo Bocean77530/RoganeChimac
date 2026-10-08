@@ -14,7 +14,11 @@ import { orderQuotes } from "@/db/schema";
 import { withDatabase } from "@/db/client.server";
 import { hashObject } from "./crypto.server";
 import { resolvePickupSelection } from "./availability.server";
-import { resolveActiveTable } from "./table-codes.server";
+import {
+  allowGlobalTableCodeLookup,
+  allowVerifiedTableCodeLookup,
+  resolveActiveTable,
+} from "./table-codes.server";
 import {
   findPromotion,
   findRestaurantBySlug,
@@ -218,7 +222,10 @@ export async function quoteOrder(rawInput: QuoteOrderInput): Promise<ServiceResu
       if (dineIn ? !restaurant.dineInEnabled : !restaurant.orderingEnabled) {
         return failure(serviceError("ORDERING_DISABLED", "This ordering method is unavailable."));
       }
-      if (input.paymentMethod !== (dineIn ? "pay_at_counter" : "online")) {
+      if (
+        (!dineIn && input.paymentMethod !== "online") ||
+        (dineIn && !["online", "pay_at_counter"].includes(input.paymentMethod))
+      ) {
         return failure(
           serviceError("PAYMENT_METHOD_UNAVAILABLE", "This payment method is unavailable."),
         );
@@ -231,6 +238,19 @@ export async function quoteOrder(rawInput: QuoteOrderInput): Promise<ServiceResu
       if (!dineIn && !slot) {
         return failure(
           serviceError("PICKUP_SLOT_UNAVAILABLE", "That pickup time is no longer available."),
+        );
+      }
+      if (
+        input.fulfillment.type === "dine_in" &&
+        (!(await allowGlobalTableCodeLookup(db)) ||
+          !(await allowVerifiedTableCodeLookup(db, restaurant.id, input.fulfillment.tableCode)))
+      ) {
+        return failure(
+          serviceError(
+            "RATE_LIMITED",
+            "Too many table-code checks. Please try again shortly.",
+            true,
+          ),
         );
       }
       const table =

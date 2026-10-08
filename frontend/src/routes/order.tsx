@@ -1,4 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { z } from "zod";
+import { resolveTableEntryFn } from "@/api/ordering";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, ShoppingBag } from "lucide-react";
 import type { MenuItem } from "@/lib/menu-data";
@@ -19,11 +22,12 @@ import { canonicalLink, pageSeoMeta } from "@/lib/seo";
 import chickenImage from "@/assets/dish-kfc.jpg";
 
 export const Route = createFileRoute("/order")({
+  validateSearch: z.object({ table: z.string().optional() }),
   head: () => ({
     meta: pageSeoMeta({
       title: "Order Korean Food Online in Dickson | Rogane Chimac",
       description:
-        "Order Korean fried chicken, bibimbap, noodles, hot pots and more online for pickup from Rogane Chimac in Dickson, Canberra.",
+        "Order Korean fried chicken, bibimbap, noodles, hot pots and more from Rogane Chimac in Dickson, Canberra.",
       path: "/order",
       imagePath: chickenImage,
     }),
@@ -33,6 +37,7 @@ export const Route = createFileRoute("/order")({
 });
 
 function OrderPage() {
+  const { table: scannedCode } = Route.useSearch();
   const [active, setActive] = useState<MenuItem | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<null | "vegetarian" | "vegan" | "gluten-free" | "spicy">(
@@ -40,7 +45,29 @@ function OrderPage() {
   );
   const [activeCat, setActiveCat] = useState<string>("popular");
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
-  const { lines, promoCode } = useCart();
+  const { lines, promoCode, fulfillment, setTable, switchToPickup } = useCart();
+  const hasTableAttempt = scannedCode !== undefined || fulfillment.type !== "pickup";
+  const scanStartedAt = useMemo(() => (scannedCode === undefined ? 0 : Date.now()), [scannedCode]);
+  const tableCode =
+    scannedCode ?? (fulfillment.type !== "pickup" ? fulfillment.tableCode : undefined);
+  const tableQuery = useQuery({
+    queryKey: ["table-entry", restaurant.slug, tableCode],
+    enabled: Boolean(tableCode),
+    queryFn: async () => {
+      const result = await resolveTableEntryFn({
+        data: { restaurantSlug: restaurant.slug, tableCode: tableCode! },
+      });
+      if (!result.ok) throw new Error(result.error.message);
+      return result.data;
+    },
+    retry: false,
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+  const tableFresh = !tableQuery.isFetching && tableQuery.dataUpdatedAt >= scanStartedAt;
+  useEffect(() => {
+    if (tableQuery.data && tableFresh) setTable(tableQuery.data);
+  }, [tableQuery.data, tableFresh, setTable]);
   const [cartOpen, setCartOpen] = useState(false);
   const totals = computeTotals({ lines, promoCode });
   const menuQuery = usePublicMenu();
@@ -106,6 +133,43 @@ function OrderPage() {
     window.scrollTo({ top: y, behavior: "smooth" });
   };
 
+  if (
+    hasTableAttempt &&
+    (!tableCode ||
+      !tableQuery.data ||
+      !tableFresh ||
+      fulfillment.type !== "dine_in" ||
+      fulfillment.tableCode !== tableCode)
+  ) {
+    return (
+      <div className="container-page py-20 text-center">
+        <h1 className="font-display text-3xl font-bold">
+          {!tableCode || tableQuery.isError ? "Table code unavailable" : "Checking table code"}
+        </h1>
+        <p className="mt-3 text-muted-foreground">
+          {!tableCode
+            ? "This table link is incomplete. Please scan the code again."
+            : tableQuery.isError
+              ? tableQuery.error instanceof Error
+                ? tableQuery.error.message
+                : "Please scan the table code again."
+              : "Please wait…"}
+        </p>
+        {(!tableCode || tableQuery.isError) && (
+          <Button
+            className="mt-6"
+            onClick={() => {
+              switchToPickup();
+              window.location.assign("/order");
+            }}
+          >
+            Order pickup instead
+          </Button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <>
       {/* Ordering header */}
@@ -125,12 +189,25 @@ function OrderPage() {
                   />{" "}
                   {openNow ? "Open now" : "Currently closed"}
                 </span>
-                {" · "}Pickup ready in ~{restaurant.ordering.pickupPrepMinutes} min
+                {tableCode
+                  ? ` · Table ${tableQuery.data?.tableLabel}`
+                  : ` · Pickup ready in ~${restaurant.ordering.pickupPrepMinutes} min`}
               </p>
             </div>
             <div className="ml-auto rounded-full border border-primary/30 bg-primary/5 px-4 py-2 text-sm font-semibold text-primary">
-              Pickup only
+              {tableCode ? `Dine in · Table ${tableQuery.data?.tableLabel}` : "Pickup"}
             </div>
+            {tableCode && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  switchToPickup();
+                  window.location.assign("/order");
+                }}
+              >
+                Switch to pickup · clears cart
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -252,7 +329,9 @@ function OrderPage() {
         <aside className="hidden lg:block">
           <div className="sticky top-40 rounded-3xl border border-border bg-card p-5 shadow-card">
             <h3 className="font-display text-lg font-bold">Your order</h3>
-            <p className="text-xs text-muted-foreground">Pickup</p>
+            <p className="text-xs text-muted-foreground">
+              {tableCode ? `Table ${tableQuery.data?.tableLabel}` : "Pickup"}
+            </p>
             {lines.length === 0 ? (
               <p className="mt-4 text-sm text-muted-foreground">
                 Your cart is empty. Add a dish to get started.

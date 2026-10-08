@@ -1,10 +1,10 @@
-# Rogane Chimac pickup ordering demo
+# Rogane Chimac ordering demo
 
 TanStack Start application demonstrating an Australian restaurant pickup flow with server-side pricing, PostgreSQL order persistence, Stripe Embedded Checkout, public order tracking, a demo kitchen display, and mock POS/printing adapters.
 
 ## Current scope
 
-- The public checkout is pickup only; delivery and pay-at-pickup are hidden. The phase-one dine-in service is disabled by default.
+- Public pickup checkout plus a signed-table-code dine-in flow. The dine-in feature flag remains disabled by default; do not enable it in production until the phase-three v2 printer worker is ready.
 - Stripe Sandbox card payments through Embedded Checkout.
 - Standard PostgreSQL persistence with Drizzle migrations and seed data.
 - Signed Stripe webhook as the only source of payment success.
@@ -16,15 +16,17 @@ TanStack Start application demonstrating an Australian restaurant pickup flow wi
 
 The `/admin` KDS remains a presentation surface with mock orders. Use `/merchant` for actual paid orders. The printer bridge runs on the shop Mac, where it can reach the Brother printer. The POS adapter remains a mock.
 
-## Dine-in phase one (service foundation only)
+## Dine-in phases one and two (printer adapter pending)
 
-Migration `0003_futuristic_khan.sql` adds `restaurant_tables` and nullable table/slot fields without deleting pickup, payment or integration-job data. New restaurants and existing rows have `dine_in_enabled = false` by default. Keep it disabled outside a controlled test until the QR entry and v2 ticket renderer are completed.
+Migration `0003_futuristic_khan.sql` adds `restaurant_tables` and nullable table/slot fields without deleting pickup, payment or integration-job data. Migration `0004_flawless_marvel_apes.sql` permits table orders paid online and adds `counter_payment_records` plus table-code lookup throttling. New restaurants and existing rows have `dine_in_enabled = false` by default. Keep production disabled until the v2 ticket renderer and worker are complete.
 
-The server accepts `fulfillment: { type: "dine_in", mode: "table", tableCode }` with `paymentMethod: "pay_at_counter"`. A table code is an HMAC-signed token bound to restaurant ID, table ID and `token_version`; the server checks the signature, restaurant, active flag and current version at both quote and order submission. Rotate a table QR by incrementing `token_version`, or deactivate its row. Provisioning/admin QR issuance is not yet a public endpoint; trusted server code can call `signTableCode` in `src/server/table-codes.server.ts` after reading the current table row. Set a separate `DINE_IN_TABLE_CODE_SECRET` of at least 32 characters before a local test.
+The server accepts `fulfillment: { type: "dine_in", mode: "table", tableCode }` with `paymentMethod: "online"` or `"pay_at_counter"`. A table code is an HMAC-signed token bound to restaurant ID, table ID and `token_version`; the server checks the signature, restaurant, active flag and current version at entry, quote and order submission. Rotate a table QR by incrementing `token_version`, or deactivate its row. Provisioning/admin QR issuance is not yet a public endpoint; trusted server code can call `signTableCode` in `src/server/table-codes.server.ts` after reading the current table row. Set a separate `DINE_IN_TABLE_CODE_SECRET` of at least 32 characters before a local test. A fixed global lookup budget covers invalid slugs and codes, and valid signed codes also use a per-table budget. PostgreSQL shares these counters across app instances and periodically prunes expired keys.
 
-A pay-at-counter table order is stored as `submitted` / `unpaid` without reserving pickup capacity. The order transaction inserts exactly two `local_worker` jobs, one kitchen and one front, with frozen schema-v2 table, item, note, total and unpaid payment details. The current worker API serves only schema-v1 pickup jobs; these v2 jobs remain queued until the phase-three ticket adapter is complete. Dine-in online payment is rejected in this phase. Merchant acceptance does not create more print jobs. The customer QR journey, counter payment recording and dine-in ticket rendering remain later work.
+A pay-at-counter table order is stored as `submitted` / `unpaid` without reserving pickup capacity. Its order transaction inserts exactly two `local_worker` jobs, one kitchen and one front, with frozen schema-v2 table, item, note, total and unpaid payment details. A dine-in online order remains `pending_payment` / `pending` with zero jobs until a verified Stripe webhook succeeds; then it gets exactly two v2 local jobs and no pickup-only POS job. Failed or expired online payments create no jobs. Merchant acceptance and counter-payment recording never create more print jobs. The current worker API serves only schema-v1 pickup jobs; v2 jobs remain queued until phase three.
 
-The optional database integration test **resets its target database** and runs only when `TEST_DATABASE_URL` names a local database exactly `dine_in_phase1_test`. It applies migrations 0000–0002, seeds existing pickup/payment/print-job rows, applies 0003, then checks data retention, table-code validation, dine-in idempotency/jobs and the pickup payment event path:
+For a controlled local test, migrate a disposable PostgreSQL database, set the secrets and Stripe Sandbox variables, insert a table row for the restaurant, and set `restaurants.dine_in_enabled = true` there only. Open `/order?table=<signed-token>` from a QR or URL. The table label is resolved server-side. Changing tables or switching to pickup clears the current cart; an invalid or empty new table code blocks checkout instead of restoring the previous table. Header and CartDrawer checkout links use the stored table context. Checkout revalidates the table code, then offers Stripe Sandbox online or pay at counter. The latter returns a private `/track-order` link immediately. `/merchant` shows table/payment status and lets an authenticated staff member record an audited cash/card/other counter payment or cancel an unpaid **pay-at-counter** table order. An online order awaiting Stripe cannot be cancelled here because a later successful payment could arrive after cancellation. Cancellation removes only queued print jobs; a job already claimed by a worker cannot be withdrawn. Name, phone and email remain required. Do not print a physical table QR or enable live table ordering until v2 ticket rendering is delivered in phase three.
+
+The optional database integration test **resets its target database** and runs only when `TEST_DATABASE_URL` names a local database exactly `dine_in_phase1_test`. It applies migrations 0000–0002, seeds existing pickup/payment/print-job rows, applies 0003 and 0004, then checks data retention, table-code validation/rate limiting, both dine-in payment paths, cancellation, idempotency/jobs and the pickup payment event path:
 
 ```bash
 TEST_DATABASE_URL=postgresql://USER@127.0.0.1:5432/dine_in_phase1_test npm test -- src/server/__tests__/dine-in.integration.test.ts
@@ -172,12 +174,12 @@ The test script deliberately invokes Vitest through Node while Bun remains the p
 
 ## Main routes
 
-- `/order` — menu and pickup cart
+- `/order` or `/order?table=<signed-token>` — menu and pickup or dine-in cart
 - `/checkout` — server quote, pending order, and Stripe Embedded Checkout
 - `/order-confirmation?session_id=...` — webhook-aware payment confirmation
 - `/track-order?t=...` — private database-backed tracking
 - `/admin` — demo KDS
-- `/merchant` — token-protected board for real paid orders and status updates
+- `/merchant` — token-protected board for real orders, status updates and counter payments
 - `/admin/menu` — PostgreSQL menu management (add/delete/photo upload requires `ADMIN_ACCESS_TOKEN`)
 - `/admin/integrations` — mock integration states
 - `/api/health` — deployment liveness check
