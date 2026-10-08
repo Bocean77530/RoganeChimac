@@ -2,6 +2,7 @@ import { and, desc, eq, ne, sql } from "drizzle-orm";
 import type { ServiceResult } from "@/domain/common";
 import type { CanonicalPosOrder } from "@/domain/integrations";
 import type { OrderStatus, PaymentStatus } from "@/domain/order";
+import { localPrintPayload } from "@/domain/local-print";
 import type { NormalizedPaymentEvent } from "@/domain/payment";
 import { withDatabase, type DatabaseExecutor } from "@/db/client.server";
 import {
@@ -457,6 +458,24 @@ export async function applyNormalizedPaymentEvent(
               })
               .returning({ id: integrationJobs.id });
             posJobCreated = Boolean(createdJob[0]);
+            for (const destination of ["kitchen", "front"] as const) {
+              await tx
+                .insert(integrationJobs)
+                .values({
+                  id: crypto.randomUUID(),
+                  restaurantId: order.restaurantId,
+                  orderId: order.id,
+                  kind: "kitchen_print",
+                  provider: "local_worker",
+                  idempotencyKey: `local_print:${order.id}:${destination}`,
+                  payload: localPrintPayload(detail, destination, now),
+                  nextAttemptAt: now,
+                  maxAttempts: 3,
+                })
+                .onConflictDoNothing({
+                  target: [integrationJobs.restaurantId, integrationJobs.idempotencyKey],
+                });
+            }
           }
         } else if (event.type === "payment.failed") {
           if (

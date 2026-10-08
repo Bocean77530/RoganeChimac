@@ -16,6 +16,7 @@ import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as OrderConfirmationRouteImport } from './routes/order-confirmation'
 import { Route as OrderRouteImport } from './routes/order'
+import { Route as MerchantRouteImport } from './routes/merchant'
 import { Route as MenuRouteImport } from './routes/menu'
 import { Route as KoreanFriedChickenDicksonRouteImport } from './routes/korean-fried-chicken-dickson'
 import { Route as ContactRouteImport } from './routes/contact'
@@ -27,9 +28,13 @@ import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as AdminMenuRouteImport } from './routes/admin/menu'
 import { Route as AdminIntegrationsRouteImport } from './routes/admin/integrations'
+import { Route as ApiLocalPrintJobsIndexRouteImport } from './routes/api/local-print-jobs/index'
 import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe/webhook'
 import { Route as ApiMenuImagesImageIdRouteImport } from './routes/api/menu-images/$imageId'
+import { Route as ApiLocalPrintJobsClaimRouteImport } from './routes/api/local-print-jobs/claim'
 import { Route as AdminOrdersOrderIdRouteImport } from './routes/admin/orders/$orderId'
+import { Route as ApiLocalPrintJobsJobIdRetryRouteImport } from './routes/api/local-print-jobs/$jobId/retry'
+import { Route as ApiLocalPrintJobsJobIdReportRouteImport } from './routes/api/local-print-jobs/$jobId/report'
 import { Route as AdminPrintOrdersOrderIdRouteImport } from './routes/admin/print/orders/$orderId'
 
 const TrackOrderRoute = TrackOrderRouteImport.update({
@@ -65,6 +70,11 @@ const OrderConfirmationRoute = OrderConfirmationRouteImport.update({
 const OrderRoute = OrderRouteImport.update({
   id: '/order',
   path: '/order',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MerchantRoute = MerchantRouteImport.update({
+  id: '/merchant',
+  path: '/merchant',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MenuRoute = MenuRouteImport.update({
@@ -123,6 +133,11 @@ const AdminIntegrationsRoute = AdminIntegrationsRouteImport.update({
   path: '/integrations',
   getParentRoute: () => AdminRoute,
 } as any)
+const ApiLocalPrintJobsIndexRoute = ApiLocalPrintJobsIndexRouteImport.update({
+  id: '/api/local-print-jobs/',
+  path: '/api/local-print-jobs/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiStripeWebhookRoute = ApiStripeWebhookRouteImport.update({
   id: '/api/stripe/webhook',
   path: '/api/stripe/webhook',
@@ -133,11 +148,28 @@ const ApiMenuImagesImageIdRoute = ApiMenuImagesImageIdRouteImport.update({
   path: '/api/menu-images/$imageId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiLocalPrintJobsClaimRoute = ApiLocalPrintJobsClaimRouteImport.update({
+  id: '/api/local-print-jobs/claim',
+  path: '/api/local-print-jobs/claim',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminOrdersOrderIdRoute = AdminOrdersOrderIdRouteImport.update({
   id: '/orders/$orderId',
   path: '/orders/$orderId',
   getParentRoute: () => AdminRoute,
 } as any)
+const ApiLocalPrintJobsJobIdRetryRoute =
+  ApiLocalPrintJobsJobIdRetryRouteImport.update({
+    id: '/api/local-print-jobs/$jobId/retry',
+    path: '/api/local-print-jobs/$jobId/retry',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiLocalPrintJobsJobIdReportRoute =
+  ApiLocalPrintJobsJobIdReportRouteImport.update({
+    id: '/api/local-print-jobs/$jobId/report',
+    path: '/api/local-print-jobs/$jobId/report',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AdminPrintOrdersOrderIdRoute = AdminPrintOrdersOrderIdRouteImport.update({
   id: '/print/orders/$orderId',
   path: '/print/orders/$orderId',
@@ -152,6 +184,7 @@ export interface FileRoutesByFullPath {
   '/contact': typeof ContactRoute
   '/korean-fried-chicken-dickson': typeof KoreanFriedChickenDicksonRoute
   '/menu': typeof MenuRoute
+  '/merchant': typeof MerchantRoute
   '/order': typeof OrderRoute
   '/order-confirmation': typeof OrderConfirmationRoute
   '/privacy': typeof PrivacyRoute
@@ -164,9 +197,13 @@ export interface FileRoutesByFullPath {
   '/api/health': typeof ApiHealthRoute
   '/admin/': typeof AdminIndexRoute
   '/admin/orders/$orderId': typeof AdminOrdersOrderIdRoute
+  '/api/local-print-jobs/claim': typeof ApiLocalPrintJobsClaimRoute
   '/api/menu-images/$imageId': typeof ApiMenuImagesImageIdRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
+  '/api/local-print-jobs/': typeof ApiLocalPrintJobsIndexRoute
   '/admin/print/orders/$orderId': typeof AdminPrintOrdersOrderIdRoute
+  '/api/local-print-jobs/$jobId/report': typeof ApiLocalPrintJobsJobIdReportRoute
+  '/api/local-print-jobs/$jobId/retry': typeof ApiLocalPrintJobsJobIdRetryRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -175,6 +212,7 @@ export interface FileRoutesByTo {
   '/contact': typeof ContactRoute
   '/korean-fried-chicken-dickson': typeof KoreanFriedChickenDicksonRoute
   '/menu': typeof MenuRoute
+  '/merchant': typeof MerchantRoute
   '/order': typeof OrderRoute
   '/order-confirmation': typeof OrderConfirmationRoute
   '/privacy': typeof PrivacyRoute
@@ -187,9 +225,13 @@ export interface FileRoutesByTo {
   '/api/health': typeof ApiHealthRoute
   '/admin': typeof AdminIndexRoute
   '/admin/orders/$orderId': typeof AdminOrdersOrderIdRoute
+  '/api/local-print-jobs/claim': typeof ApiLocalPrintJobsClaimRoute
   '/api/menu-images/$imageId': typeof ApiMenuImagesImageIdRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
+  '/api/local-print-jobs': typeof ApiLocalPrintJobsIndexRoute
   '/admin/print/orders/$orderId': typeof AdminPrintOrdersOrderIdRoute
+  '/api/local-print-jobs/$jobId/report': typeof ApiLocalPrintJobsJobIdReportRoute
+  '/api/local-print-jobs/$jobId/retry': typeof ApiLocalPrintJobsJobIdRetryRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -200,6 +242,7 @@ export interface FileRoutesById {
   '/contact': typeof ContactRoute
   '/korean-fried-chicken-dickson': typeof KoreanFriedChickenDicksonRoute
   '/menu': typeof MenuRoute
+  '/merchant': typeof MerchantRoute
   '/order': typeof OrderRoute
   '/order-confirmation': typeof OrderConfirmationRoute
   '/privacy': typeof PrivacyRoute
@@ -212,9 +255,13 @@ export interface FileRoutesById {
   '/api/health': typeof ApiHealthRoute
   '/admin/': typeof AdminIndexRoute
   '/admin/orders/$orderId': typeof AdminOrdersOrderIdRoute
+  '/api/local-print-jobs/claim': typeof ApiLocalPrintJobsClaimRoute
   '/api/menu-images/$imageId': typeof ApiMenuImagesImageIdRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
+  '/api/local-print-jobs/': typeof ApiLocalPrintJobsIndexRoute
   '/admin/print/orders/$orderId': typeof AdminPrintOrdersOrderIdRoute
+  '/api/local-print-jobs/$jobId/report': typeof ApiLocalPrintJobsJobIdReportRoute
+  '/api/local-print-jobs/$jobId/retry': typeof ApiLocalPrintJobsJobIdRetryRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -226,6 +273,7 @@ export interface FileRouteTypes {
     | '/contact'
     | '/korean-fried-chicken-dickson'
     | '/menu'
+    | '/merchant'
     | '/order'
     | '/order-confirmation'
     | '/privacy'
@@ -238,9 +286,13 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/admin/'
     | '/admin/orders/$orderId'
+    | '/api/local-print-jobs/claim'
     | '/api/menu-images/$imageId'
     | '/api/stripe/webhook'
+    | '/api/local-print-jobs/'
     | '/admin/print/orders/$orderId'
+    | '/api/local-print-jobs/$jobId/report'
+    | '/api/local-print-jobs/$jobId/retry'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -249,6 +301,7 @@ export interface FileRouteTypes {
     | '/contact'
     | '/korean-fried-chicken-dickson'
     | '/menu'
+    | '/merchant'
     | '/order'
     | '/order-confirmation'
     | '/privacy'
@@ -261,9 +314,13 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/admin'
     | '/admin/orders/$orderId'
+    | '/api/local-print-jobs/claim'
     | '/api/menu-images/$imageId'
     | '/api/stripe/webhook'
+    | '/api/local-print-jobs'
     | '/admin/print/orders/$orderId'
+    | '/api/local-print-jobs/$jobId/report'
+    | '/api/local-print-jobs/$jobId/retry'
   id:
     | '__root__'
     | '/'
@@ -273,6 +330,7 @@ export interface FileRouteTypes {
     | '/contact'
     | '/korean-fried-chicken-dickson'
     | '/menu'
+    | '/merchant'
     | '/order'
     | '/order-confirmation'
     | '/privacy'
@@ -285,9 +343,13 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/admin/'
     | '/admin/orders/$orderId'
+    | '/api/local-print-jobs/claim'
     | '/api/menu-images/$imageId'
     | '/api/stripe/webhook'
+    | '/api/local-print-jobs/'
     | '/admin/print/orders/$orderId'
+    | '/api/local-print-jobs/$jobId/report'
+    | '/api/local-print-jobs/$jobId/retry'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -298,6 +360,7 @@ export interface RootRouteChildren {
   ContactRoute: typeof ContactRoute
   KoreanFriedChickenDicksonRoute: typeof KoreanFriedChickenDicksonRoute
   MenuRoute: typeof MenuRoute
+  MerchantRoute: typeof MerchantRoute
   OrderRoute: typeof OrderRoute
   OrderConfirmationRoute: typeof OrderConfirmationRoute
   PrivacyRoute: typeof PrivacyRoute
@@ -306,8 +369,12 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   TrackOrderRoute: typeof TrackOrderRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  ApiLocalPrintJobsClaimRoute: typeof ApiLocalPrintJobsClaimRoute
   ApiMenuImagesImageIdRoute: typeof ApiMenuImagesImageIdRoute
   ApiStripeWebhookRoute: typeof ApiStripeWebhookRoute
+  ApiLocalPrintJobsIndexRoute: typeof ApiLocalPrintJobsIndexRoute
+  ApiLocalPrintJobsJobIdReportRoute: typeof ApiLocalPrintJobsJobIdReportRoute
+  ApiLocalPrintJobsJobIdRetryRoute: typeof ApiLocalPrintJobsJobIdRetryRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -359,6 +426,13 @@ declare module '@tanstack/react-router' {
       path: '/order'
       fullPath: '/order'
       preLoaderRoute: typeof OrderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/merchant': {
+      id: '/merchant'
+      path: '/merchant'
+      fullPath: '/merchant'
+      preLoaderRoute: typeof MerchantRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/menu': {
@@ -438,6 +512,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIntegrationsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/api/local-print-jobs/': {
+      id: '/api/local-print-jobs/'
+      path: '/api/local-print-jobs'
+      fullPath: '/api/local-print-jobs/'
+      preLoaderRoute: typeof ApiLocalPrintJobsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/stripe/webhook': {
       id: '/api/stripe/webhook'
       path: '/api/stripe/webhook'
@@ -452,12 +533,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMenuImagesImageIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/local-print-jobs/claim': {
+      id: '/api/local-print-jobs/claim'
+      path: '/api/local-print-jobs/claim'
+      fullPath: '/api/local-print-jobs/claim'
+      preLoaderRoute: typeof ApiLocalPrintJobsClaimRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/orders/$orderId': {
       id: '/admin/orders/$orderId'
       path: '/orders/$orderId'
       fullPath: '/admin/orders/$orderId'
       preLoaderRoute: typeof AdminOrdersOrderIdRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/api/local-print-jobs/$jobId/retry': {
+      id: '/api/local-print-jobs/$jobId/retry'
+      path: '/api/local-print-jobs/$jobId/retry'
+      fullPath: '/api/local-print-jobs/$jobId/retry'
+      preLoaderRoute: typeof ApiLocalPrintJobsJobIdRetryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/local-print-jobs/$jobId/report': {
+      id: '/api/local-print-jobs/$jobId/report'
+      path: '/api/local-print-jobs/$jobId/report'
+      fullPath: '/api/local-print-jobs/$jobId/report'
+      preLoaderRoute: typeof ApiLocalPrintJobsJobIdReportRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/admin/print/orders/$orderId': {
       id: '/admin/print/orders/$orderId'
@@ -495,6 +597,7 @@ const rootRouteChildren: RootRouteChildren = {
   ContactRoute: ContactRoute,
   KoreanFriedChickenDicksonRoute: KoreanFriedChickenDicksonRoute,
   MenuRoute: MenuRoute,
+  MerchantRoute: MerchantRoute,
   OrderRoute: OrderRoute,
   OrderConfirmationRoute: OrderConfirmationRoute,
   PrivacyRoute: PrivacyRoute,
@@ -503,8 +606,12 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   TrackOrderRoute: TrackOrderRoute,
   ApiHealthRoute: ApiHealthRoute,
+  ApiLocalPrintJobsClaimRoute: ApiLocalPrintJobsClaimRoute,
   ApiMenuImagesImageIdRoute: ApiMenuImagesImageIdRoute,
   ApiStripeWebhookRoute: ApiStripeWebhookRoute,
+  ApiLocalPrintJobsIndexRoute: ApiLocalPrintJobsIndexRoute,
+  ApiLocalPrintJobsJobIdReportRoute: ApiLocalPrintJobsJobIdReportRoute,
+  ApiLocalPrintJobsJobIdRetryRoute: ApiLocalPrintJobsJobIdRetryRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

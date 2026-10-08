@@ -11,8 +11,10 @@ TanStack Start application demonstrating an Australian restaurant pickup flow wi
 - Private-token confirmation and tracking pages backed by the database.
 - Database-backed public menu with protected add/delete operations in `/admin/menu`.
 - Demo `/admin` KDS with mock data, Mock POS, retry states, and 80mm browser printing.
+- Real paid-order board at `/merchant`, protected by `ADMIN_ACCESS_TOKEN`; merchant changes appear on the customer's tracking page.
+- Two local printer jobs per newly paid order, claimed over HTTPS by the shop Mac. The worker saves kitchen and front PDFs before sending each job to `lp`.
 
-The Admin/KDS is a presentation surface in this iteration. It is not authenticated and does not yet read production orders, so it must not be exposed as a production operations console. A real restaurant POS and automatic LAN printer also require a provider-specific adapter or an on-premise print bridge.
+The `/admin` KDS remains a presentation surface with mock orders. Use `/merchant` for actual paid orders. The printer bridge runs on the shop Mac, where it can reach the Brother printer. The POS adapter remains a mock.
 
 ## Local setup
 
@@ -86,11 +88,28 @@ QUOTE_TTL_SECONDS=600
 PENDING_ORDER_TTL_SECONDS=1860
 TRACKING_TOKEN_PEPPER=replace-with-at-least-32-random-characters
 ADMIN_ACCESS_TOKEN=replace-with-at-least-24-random-characters
+PRINT_WORKER_TOKEN=replace-with-at-least-32-random-characters
 ```
 
 `VITE_STRIPE_PUBLISHABLE_KEY` is intentionally public and is passed to the Docker build as a declared build argument. `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `DATABASE_URL`, and `TRACKING_TOKEN_PEPPER` remain runtime-only secrets. Do not enable Railway skipped builds when changing a `VITE_*` value because Vite embeds it in the browser bundle.
 
 The database is reached over Railway's private network. Do not replace `Postgres.DATABASE_URL` with a public TCP URL unless an external administrative tool specifically needs it.
+
+The printer integration uses the existing PostgreSQL `integration_jobs` table, so it adds no schema migration and does not rewrite existing orders. Jobs are created only when a new payment success event is confirmed; historical paid orders are not automatically backfilled or printed.
+
+## Shop printer and order progress
+
+Open `/merchant` on the main Railway URL and enter the existing `ADMIN_ACCESS_TOKEN`. The page lists real paid pickup orders and lets staff advance them through accepted, preparing, ready for pickup, and collected. The customer's private `/track-order` page refreshes every five seconds.
+
+On the shop Mac, copy `printing/main-worker.env.example` to `data/main-worker.env` and set the same `PRINT_WORKER_TOKEN` as Railway. Set `KITCHEN_PRINTER` and `FRONT_PRINTER` to the exact local queue names; both may point to the Brother queue. Keep this file private. Run:
+
+```bash
+npm run print:main
+```
+
+Keep the terminal running while orders are accepted. The worker polls every three seconds, creates private PDFs under `data/receipts-main/`, and sends the ticket text to the local print queues. `npm run print:main -- --dry-run --once` previews pending jobs without claiming them. `npm run print:main -- --once` processes current pending jobs and exits. A successful queue report means the operating system accepted the job; check the physical printer for paper and print quality.
+
+If the printer command times out and its outcome is unknown, the job stays in `processing` to avoid an automatic duplicate. After checking the printer and confirming no ticket printed, an operator can manually retry the job through the bearer-protected `POST /api/local-print-jobs/:jobId/retry` endpoint with a JSON `reason` of at least eight characters. The two destinations are independent, so one failed queue does not block the other.
 
 ## Portable container deployment
 
@@ -144,6 +163,7 @@ The test script deliberately invokes Vitest through Node while Bun remains the p
 - `/order-confirmation?session_id=...` — webhook-aware payment confirmation
 - `/track-order?t=...` — private database-backed tracking
 - `/admin` — demo KDS
+- `/merchant` — token-protected board for real paid orders and status updates
 - `/admin/menu` — PostgreSQL menu management (add/delete/photo upload requires `ADMIN_ACCESS_TOKEN`)
 - `/admin/integrations` — mock integration states
 - `/api/health` — deployment liveness check

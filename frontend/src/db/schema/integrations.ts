@@ -12,6 +12,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import type { CanonicalPosOrder, KitchenTicket } from "@/domain/integrations";
+import type { LocalPrintPayload } from "@/domain/local-print";
 import { integrationJobStatusEnum, integrationKindEnum } from "./enums";
 import { orders } from "./orders";
 import { restaurants } from "./restaurants";
@@ -31,7 +32,9 @@ export const integrationJobs = pgTable(
     idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
     payloadVersion: integer("payload_version").notNull().default(1),
     status: integrationJobStatusEnum("status").notNull().default("queued"),
-    payload: jsonb("payload").$type<CanonicalPosOrder | KitchenTicket>().notNull(),
+    payload: jsonb("payload")
+      .$type<CanonicalPosOrder | KitchenTicket | LocalPrintPayload>()
+      .notNull(),
     attemptCount: integer("attempt_count").notNull().default(0),
     maxAttempts: integer("max_attempts").notNull().default(6),
     nextAttemptAt: timestamp("next_attempt_at", {
@@ -52,10 +55,7 @@ export const integrationJobs = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true, mode: "date" }),
   },
   (table) => [
-    uniqueIndex("integration_jobs_idempotency_uidx").on(
-      table.restaurantId,
-      table.idempotencyKey,
-    ),
+    uniqueIndex("integration_jobs_idempotency_uidx").on(table.restaurantId, table.idempotencyKey),
     index("integration_jobs_claim_idx").on(table.status, table.nextAttemptAt, table.createdAt),
     check(
       "integration_jobs_attempt_chk",

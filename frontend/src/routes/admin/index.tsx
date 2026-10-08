@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import type { OrderStatus } from "../../domain/order";
 import {
   AdminClientError,
@@ -47,11 +47,14 @@ function AdminOrdersPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-bold uppercase tracking-widest text-primary">Pickup service</p>
-          <h1 className="mt-1 font-display text-3xl font-extrabold">Live order board</h1>
+          <h1 className="mt-1 font-display text-3xl font-extrabold">Demo order board</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Paid orders only. Integration failures never remove a kitchen order.
+            This board contains sample orders. Open the merchant board for real paid orders.
           </p>
         </div>
+        <Button asChild>
+          <Link to="/merchant">Open real orders</Link>
+        </Button>
         <Button
           type="button"
           variant="outline"

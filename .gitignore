@@ -19,6 +19,8 @@ dist-ssr
 .env
 .env.*
 !.env.example
+frontend/data/
+frontend/output/pdf/
 
 # Wrangler / Cloudflare
 .wrangler/
