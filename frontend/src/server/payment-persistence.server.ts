@@ -397,6 +397,7 @@ export async function applyNormalizedPaymentEvent(
 
         if (event.type === "payment.succeeded") {
           const eligibleForFulfillment = order.status !== "expired" && order.status !== "cancelled";
+          const newlyPaid = order.status === "pending_payment";
           if (order.status === "pending_payment") {
             const transitioned = await applyOrderTransition(tx, {
               orderId: order.id,
@@ -458,23 +459,25 @@ export async function applyNormalizedPaymentEvent(
               })
               .returning({ id: integrationJobs.id });
             posJobCreated = Boolean(createdJob[0]);
-            for (const destination of ["kitchen", "front"] as const) {
-              await tx
-                .insert(integrationJobs)
-                .values({
-                  id: crypto.randomUUID(),
-                  restaurantId: order.restaurantId,
-                  orderId: order.id,
-                  kind: "kitchen_print",
-                  provider: "local_worker",
-                  idempotencyKey: `local_print:${order.id}:${destination}`,
-                  payload: localPrintPayload(detail, destination, now),
-                  nextAttemptAt: now,
-                  maxAttempts: 3,
-                })
-                .onConflictDoNothing({
-                  target: [integrationJobs.restaurantId, integrationJobs.idempotencyKey],
-                });
+            if (newlyPaid) {
+              for (const destination of ["kitchen", "front"] as const) {
+                await tx
+                  .insert(integrationJobs)
+                  .values({
+                    id: crypto.randomUUID(),
+                    restaurantId: order.restaurantId,
+                    orderId: order.id,
+                    kind: "kitchen_print",
+                    provider: "local_worker",
+                    idempotencyKey: `local_print:${order.id}:${destination}`,
+                    payload: localPrintPayload(detail, destination, now),
+                    nextAttemptAt: now,
+                    maxAttempts: 3,
+                  })
+                  .onConflictDoNothing({
+                    target: [integrationJobs.restaurantId, integrationJobs.idempotencyKey],
+                  });
+              }
             }
           }
         } else if (event.type === "payment.failed") {
