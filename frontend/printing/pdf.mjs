@@ -10,11 +10,13 @@ export async function saveTicketPdf(job, directory = resolve("data/receipts")) {
   if (!/^RC-[0-9A-F]{12}$/.test(number) || !["kitchen", "front"].includes(destination))
     throw new Error("Invalid PDF ticket identity");
   await mkdir(directory, { recursive: true, mode: 0o700 });
+  await chmod(directory, 0o700);
   const scratch = await mkdtemp(join(tmpdir(), "seoul-ticket-pdf-"));
   await chmod(scratch, 0o700);
   const source = join(scratch, "ticket.txt");
+  if (!/^[0-9a-f-]{36}$/i.test(job.id)) throw new Error("Invalid PDF job identity");
   const temporaryPdf = join(directory, `.${number}-${destination}-${job.id}.pdf`);
-  const finalPdf = join(directory, `${number}-${destination}.pdf`);
+  const finalPdf = join(directory, `${number}-${destination}-${job.id}.pdf`);
   try {
     await writeFile(source, renderTicket(job), { mode: 0o600 });
     await new Promise((resolvePdf, rejectPdf) => {
@@ -22,10 +24,10 @@ export async function saveTicketPdf(job, directory = resolve("data/receipts")) {
         "pango-view",
         [
           "--no-display",
-          "--font=AppleGothic 12",
-          "--width=500",
+          "--font=AppleGothic 11",
+          "--width=196",
           "--wrap=word-char",
-          "--margin=30",
+          "--margin=15",
           `--output=${temporaryPdf}`,
           source,
         ],

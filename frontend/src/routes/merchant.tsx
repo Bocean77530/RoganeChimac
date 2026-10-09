@@ -3,7 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   listMerchantOrdersFn,
+  listMerchantPrintJobsFn,
   recordCounterPaymentFn,
+  retryMerchantPrintJobFn,
   updateMerchantOrderFn,
 } from "@/api/merchant";
 import type { AdminOrderDetail, OrderStatus } from "@/domain/order";
@@ -35,6 +37,7 @@ function MerchantOrdersPage() {
   const [draftToken, setDraftToken] = useState("");
   const [operatorName, setOperatorName] = useState("");
   const [counterMethod, setCounterMethod] = useState<"cash" | "card" | "other">("cash");
+  const [retryReason, setRetryReason] = useState("");
   const paymentKeys = useRef(new Map<string, string>());
   const queryClient = useQueryClient();
   useEffect(() => {
@@ -51,6 +54,23 @@ function MerchantOrdersPage() {
       return result.data;
     },
     refetchInterval: 5_000,
+  });
+  const printJobsQuery = useQuery({
+    queryKey: ["merchant", "print-jobs", adminToken],
+    enabled: Boolean(adminToken),
+    queryFn: () => listMerchantPrintJobsFn({ data: { adminToken } }),
+    refetchInterval: 5_000,
+  });
+  const retryPrintJob = useMutation({
+    mutationFn: async (jobId: string) => {
+      const result = await retryMerchantPrintJobFn({
+        data: { adminToken, jobId, reason: retryReason.trim() },
+      });
+      if (!result.ok) throw new Error(result.error);
+      return result.job;
+    },
+    onSettled: () =>
+      void queryClient.invalidateQueries({ queryKey: ["merchant", "print-jobs", adminToken] }),
   });
   const change = useMutation({
     mutationFn: async ({ order, toStatus }: { order: AdminOrderDetail; toStatus: OrderStatus }) => {
@@ -267,6 +287,81 @@ function MerchantOrdersPage() {
               );
             })}
           </div>
+          <section className="mt-12 rounded-2xl border border-border bg-card p-5">
+            <h2 className="font-display text-2xl font-bold">Local printer jobs</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              A succeeded job was accepted by the computer print queue. Check the paper before
+              retrying any job with an expired lease; its print outcome is unknown.
+            </p>
+            <Input
+              className="mt-4 max-w-xl"
+              aria-label="Print retry reason"
+              placeholder="Reason for manual retry (at least 8 characters)"
+              value={retryReason}
+              onChange={(event) => setRetryReason(event.target.value)}
+            />
+            {printJobsQuery.isError && (
+              <p className="mt-3 text-sm text-destructive">Printer jobs could not be loaded.</p>
+            )}
+            {printJobsQuery.data?.length === 0 && <p className="mt-3">No printer jobs yet.</p>}
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {printJobsQuery.data?.map((job) => (
+                <article key={job.id} className="rounded-xl border border-border p-4">
+                  <h3 className="font-semibold">
+                    {job.orderNumber} · {job.destination}
+                  </h3>
+                  <p className="text-sm">
+                    {job.status.replaceAll("_", " ")} · v{job.payloadVersion} · attempt{" "}
+                    {job.attemptCount}
+                  </p>
+                  {!job.supported && (
+                    <p className="text-sm text-destructive">
+                      Unsupported payload; worker will not claim this job.
+                    </p>
+                  )}
+                  {job.skipReason && (
+                    <p className="text-sm text-destructive">
+                      {job.skipReason === "v2_created_before_cutoff"
+                        ? `Older v2 ticket predates the print cutoff (${job.v2CutoffAt}); no new claim or retry. Review before any manual action.`
+                        : job.skipReason === "v2_cutoff_invalid"
+                          ? "V2 printing disabled: PRINT_V2_CREATED_AFTER is invalid."
+                          : "V2 printing disabled: PRINT_V2_CREATED_AFTER is not set."}
+                    </p>
+                  )}
+                  {job.spoolerJobId && (
+                    <p className="text-sm">Computer queue ID: {job.spoolerJobId}</p>
+                  )}
+                  {job.lastErrorMessage && (
+                    <p className="text-sm text-destructive">{job.lastErrorMessage}</p>
+                  )}
+                  {job.canRetry && (
+                    <Button
+                      className="mt-3"
+                      variant="outline"
+                      disabled={retryReason.trim().length < 8 || retryPrintJob.isPending}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            "Confirm this single ticket did not print. Retry may produce a duplicate.",
+                          )
+                        )
+                          retryPrintJob.mutate(job.id);
+                      }}
+                    >
+                      Retry this ticket
+                    </Button>
+                  )}
+                  {retryPrintJob.isError && retryPrintJob.variables === job.id && (
+                    <p className="mt-2 text-sm text-destructive">
+                      {retryPrintJob.error instanceof Error
+                        ? retryPrintJob.error.message
+                        : "Retry failed."}
+                    </p>
+                  )}
+                </article>
+              ))}
+            </div>
+          </section>
         </>
       )}
     </main>

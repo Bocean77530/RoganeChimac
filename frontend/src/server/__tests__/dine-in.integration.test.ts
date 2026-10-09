@@ -1,12 +1,21 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDatabase } from "@/db/client.server";
 import { paymentConfirmationPollInterval, trackingPollInterval } from "@/lib/order-polling";
 import { createPendingOrder } from "../orders.server";
-import { claimLocalPrintJob, listLocalPrintJobs } from "../local-print-jobs.server";
+import {
+  claimLocalPrintJob,
+  listLocalPrintJobs,
+  listMerchantPrintJobs,
+  reportLocalPrintJob,
+  retryLocalPrintJob,
+} from "../local-print-jobs.server";
 import { applyNormalizedPaymentEvent, preparePaymentAttempt } from "../payment-persistence.server";
 import { quoteOrder } from "../pricing.server";
 import { signTableCode } from "../table-codes.server";
@@ -14,6 +23,12 @@ import { transitionOrderStatus } from "../order-transitions.server";
 import { recordCounterPayment, updateMerchantOrder } from "../merchant-orders.server";
 import { resolveTableEntry } from "../table-entry.server";
 import { getPublicOrder } from "../public-orders.server";
+import {
+  placardDirectory,
+  runTableCommand,
+  signProvisionedTable,
+} from "../../../scripts/tables.mjs";
+import { runWorker } from "../../../printing/worker.mjs";
 
 const testUrl = process.env.TEST_DATABASE_URL;
 const safeTestUrl = (() => {
@@ -65,6 +80,7 @@ suite("dine-in phase one against a disposable local PostgreSQL database", () => 
   beforeAll(async () => {
     process.env.DATABASE_URL = testUrl;
     process.env.DINE_IN_TABLE_CODE_SECRET = secret;
+    process.env.PRINT_V2_CREATED_AFTER = "2020-01-01T00:00:00.000Z";
     process.env.ORDER_TRACKING_TOKEN_SECRET = "phase-one-tracking-secret-at-least-32-characters";
     process.env.ADMIN_ACCESS_TOKEN = "phase-two-admin-token-at-least-24-chars";
     client = new pg.Client({ connectionString: testUrl });
@@ -276,12 +292,13 @@ suite("dine-in phase one against a disposable local PostgreSQL database", () => 
       });
     }
     const workerVisible = await listLocalPrintJobs();
-    expect(workerVisible.some((job) => job.orderId === first.data.id)).toBe(false);
+    expect(workerVisible.filter((job) => job.orderId === first.data.id)).toHaveLength(2);
     await client.query("UPDATE integration_jobs SET status = 'succeeded' WHERE id = $1", [
       oldJobId,
     ]);
-    expect(await listLocalPrintJobs()).toHaveLength(0);
-    expect(await claimLocalPrintJob()).toBeNull();
+    expect(
+      (await listLocalPrintJobs()).filter((job) => job.orderId === first.data.id),
+    ).toHaveLength(2);
     const after = await client.query("SELECT reserved_count FROM pickup_slots WHERE id = $1", [
       slotId,
     ]);
@@ -436,6 +453,21 @@ suite("dine-in phase one against a disposable local PostgreSQL database", () => 
     expect(
       printed.rows.every((row) => row.payload_version === 1 && row.payload.method === "pickup"),
     ).toBe(true);
+    expect(
+      (await listLocalPrintJobs()).filter((job) => job.orderId === order.data.id),
+    ).toHaveLength(2);
+    await client.query("UPDATE orders SET payment_status = 'pending' WHERE id = $1", [
+      order.data.id,
+    ]);
+    expect((await listLocalPrintJobs()).some((job) => job.orderId === order.data.id)).toBe(false);
+    await client.query("UPDATE orders SET payment_status = 'paid' WHERE id = $1", [order.data.id]);
+    await client.query("UPDATE orders SET payment_status = 'partially_refunded' WHERE id = $1", [
+      order.data.id,
+    ]);
+    expect(
+      (await listLocalPrintJobs()).filter((job) => job.orderId === order.data.id),
+    ).toHaveLength(2);
+    await client.query("UPDATE orders SET payment_status = 'paid' WHERE id = $1", [order.data.id]);
     expect(
       (await applyNormalizedPaymentEvent({ ...paidEvent, providerEventId: randomUUID() })).ok,
     ).toBe(true);
@@ -607,6 +639,9 @@ suite("dine-in phase one against a disposable local PostgreSQL database", () => 
       (await client.query("SELECT id FROM integration_jobs WHERE order_id = $1", [order.data.id]))
         .rows,
     ).toHaveLength(2);
+    expect(
+      (await listLocalPrintJobs()).filter((job) => job.orderId === order.data.id),
+    ).toHaveLength(2);
   });
 
   it("records one audited counter payment without creating extra print jobs", async () => {
@@ -714,5 +749,443 @@ suite("dine-in phase one against a disposable local PostgreSQL database", () => 
       [order.data.id],
     );
     expect(jobs.rows.map((row) => row.status)).toEqual(["cancelled", "processing"]);
+    expect((await listLocalPrintJobs()).some((job) => job.orderId === order.data.id)).toBe(false);
+  });
+
+  it("claims v2 destinations independently, rejects unknown jobs, and retries only a failed ticket", async () => {
+    await client.query(
+      "UPDATE integration_jobs SET status = 'succeeded' WHERE provider = 'local_worker' AND status IN ('queued', 'retry_scheduled')",
+    );
+    const quote = await quoteTable(signTableCode({ restaurantId, tableId, tokenVersion: 3 }));
+    if (!quote.ok) throw new Error("quote failed");
+    const order = await createPendingOrder({
+      quoteId: quote.data.quoteId,
+      attemptId: randomUUID(),
+      customer: { name: "Print Guest", phone: "0400000000", email: "print@example.com" },
+      termsAccepted: true,
+      termsVersion: "v1",
+    });
+    if (!order.ok) throw new Error("order failed");
+    await client.query("UPDATE integration_jobs SET max_attempts = 1 WHERE order_id = $1", [
+      order.data.id,
+    ]);
+    await client.query(
+      `INSERT INTO integration_jobs
+         (id, restaurant_id, order_id, kind, provider, idempotency_key,
+          payload_version, payload, next_attempt_at)
+       VALUES ($1, $2, $3, 'kitchen_print', 'local_worker', $4, 99,
+               '{"schemaVersion":99,"method":"dine_in","destination":"kitchen","items":[]}'::jsonb, now())`,
+      [randomUUID(), restaurantId, order.data.id, `unsupported:${randomUUID()}`],
+    );
+    expect(
+      (await listLocalPrintJobs()).filter((job) => job.orderId === order.data.id),
+    ).toHaveLength(2);
+    const merchant = await listMerchantPrintJobs(process.env.ADMIN_ACCESS_TOKEN!);
+    expect(merchant.some((job) => job.orderId === order.data.id && !job.supported)).toBe(true);
+
+    const [first, second] = await Promise.all([claimLocalPrintJob(), claimLocalPrintJob()]);
+    expect(first?.id).toBeTruthy();
+    expect(second?.id).toBeTruthy();
+    expect(first?.id).not.toBe(second?.id);
+    expect([first?.destination, second?.destination].sort()).toEqual(["front", "kitchen"]);
+    expect(await claimLocalPrintJob()).toBeNull();
+    if (!first || !second) return;
+    const accepted = await reportLocalPrintJob(first.id, {
+      leaseToken: first.leaseToken!,
+      result: "queued",
+      queueName: "Brother",
+      spoolerJobId: "Brother-123",
+    });
+    expect(accepted).toMatchObject({ ok: true, job: { status: "succeeded" } });
+    expect(
+      await reportLocalPrintJob(first.id, {
+        leaseToken: first.leaseToken!,
+        result: "queued",
+        queueName: "Brother",
+        spoolerJobId: "Brother-123",
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      await reportLocalPrintJob(first.id, {
+        leaseToken: first.leaseToken!,
+        result: "queued",
+        queueName: "Brother",
+        spoolerJobId: "Brother-999",
+      }),
+    ).toMatchObject({ ok: false, status: 409 });
+    expect(
+      await reportLocalPrintJob(second.id, {
+        leaseToken: second.leaseToken!,
+        result: "failed",
+        queueName: "Broken",
+        error: "lp rejected the ticket",
+      }),
+    ).toMatchObject({ ok: true, job: { status: "manual_action_required" } });
+    expect(await retryLocalPrintJob(second.id, "Checked paper; safe to retry")).toMatchObject({
+      ok: true,
+      job: { status: "queued" },
+    });
+    const retry = await claimLocalPrintJob();
+    expect(retry?.id).toBe(second.id);
+    expect(retry?.destination).toBe(second.destination);
+    expect(await claimLocalPrintJob()).toBeNull();
+    expect(
+      await reportLocalPrintJob(second.id, {
+        leaseToken: second.leaseToken!,
+        result: "queued",
+        queueName: "Brother",
+        spoolerJobId: "Brother-stale",
+      }),
+    ).toMatchObject({ ok: false, status: 404 });
+  });
+
+  it("provisions two tables, rotates one code, and deactivates the other", async () => {
+    const rendered: Array<{ table: { code: string; token_version: number } }> = [];
+    const environment = {
+      ...process.env,
+      DATABASE_URL: testUrl!,
+      DINE_IN_TABLE_CODE_SECRET: secret,
+      APP_BASE_URL: "https://example.test",
+    };
+    const render = async (input: { table: { code: string; token_version: number } }) => {
+      rendered.push(input);
+    };
+    const created = await runTableCommand(
+      ["create", "--restaurant", "phase1", "--tables", "T20:Table 20,T21:Table 21"],
+      environment,
+      () => {},
+      render,
+    );
+    expect(created).toHaveLength(2);
+    expect(rendered.map((entry) => entry.table.code)).toEqual(["T20", "T21"]);
+    const oldCode = signProvisionedTable(
+      { restaurantId, tableId: created[0].id, tokenVersion: 1 },
+      secret,
+    );
+    expect(await resolveTableEntry({ restaurantSlug: "phase1", tableCode: oldCode })).toMatchObject(
+      {
+        ok: true,
+        data: { tableLabel: "Table 20" },
+      },
+    );
+    const rotated = await runTableCommand(
+      ["rotate", "--restaurant", "phase1", "--code", "T20"],
+      environment,
+      () => {},
+      render,
+    );
+    expect(rotated[0].token_version).toBe(2);
+    expect(await resolveTableEntry({ restaurantSlug: "phase1", tableCode: oldCode })).toMatchObject(
+      {
+        ok: false,
+        error: { code: "TABLE_CODE_INVALID" },
+      },
+    );
+    const newCode = signProvisionedTable(
+      { restaurantId, tableId: created[0].id, tokenVersion: 2 },
+      secret,
+    );
+    expect(await resolveTableEntry({ restaurantSlug: "phase1", tableCode: newCode })).toMatchObject(
+      {
+        ok: true,
+      },
+    );
+    await runTableCommand(
+      ["deactivate", "--restaurant", "phase1", "--code", "T21"],
+      environment,
+      () => {},
+      render,
+    );
+    expect(
+      await resolveTableEntry({
+        restaurantSlug: "phase1",
+        tableCode: signProvisionedTable(
+          { restaurantId, tableId: created[1].id, tokenVersion: 1 },
+          secret,
+        ),
+      }),
+    ).toMatchObject({ ok: false, error: { code: "TABLE_CODE_INVALID" } });
+  });
+
+  it("isolates same-code placards and rejects flat legacy files and stale renders", async () => {
+    const output = await mkdtemp(join(tmpdir(), "rogane-placards-test-"));
+    const environment = {
+      ...process.env,
+      DATABASE_URL: testUrl!,
+      DINE_IN_TABLE_CODE_SECRET: secret,
+      APP_BASE_URL: "https://example.test",
+    };
+    const render = async (input: {
+      table: { id: string; token_version: number };
+      restaurant: { id: string };
+      output: string;
+    }) => {
+      const directory = placardDirectory(
+        input.output,
+        input.restaurant.id,
+        input.table.id,
+        input.table.token_version,
+      );
+      await mkdir(directory, { recursive: true });
+      await writeFile(join(directory, "placard.svg"), "<svg/>");
+      await writeFile(join(directory, "placard.pdf"), "%PDF-fake");
+    };
+    try {
+      const first = await runTableCommand(
+        [
+          "create",
+          "--restaurant",
+          "phase1",
+          "--tables",
+          "T01:Table 01,t01:Lower 01",
+          "--out",
+          output,
+        ],
+        environment,
+        () => {},
+        render,
+      );
+      const other = await runTableCommand(
+        ["create", "--restaurant", "phase1-other", "--tables", "T01:Other 01", "--out", output],
+        environment,
+        () => {},
+        render,
+      );
+      const directories = [
+        ...first.map((table) => placardDirectory(output, restaurantId, table.id, 1)),
+        placardDirectory(output, otherRestaurantId, other[0].id, 1),
+      ];
+      expect(new Set(directories.map((path) => path.toLowerCase())).size).toBe(3);
+      for (const directory of directories)
+        await expect(access(join(directory, "placard.pdf"))).resolves.toBeUndefined();
+      await writeFile(join(output, "t88.PDF"), "old flat placard");
+      await expect(
+        runTableCommand(
+          ["create", "--restaurant", "phase1", "--tables", "T88:Legacy 88", "--out", output],
+          environment,
+          () => {},
+          render,
+        ),
+      ).rejects.toThrow(/Legacy code-only placard/);
+      expect(
+        (
+          await client.query(
+            "SELECT id FROM restaurant_tables WHERE restaurant_id = $1 AND code = 'T88'",
+            [restaurantId],
+          )
+        ).rows,
+      ).toHaveLength(0);
+      await expect(
+        runTableCommand(
+          ["create", "--restaurant", "phase1", "--tables", "T89:Different table", "--out", output],
+          environment,
+          () => {},
+          render,
+        ),
+      ).rejects.toThrow(/Legacy code-only placard/);
+      await rm(join(output, "t88.PDF"));
+
+      const staleRender = async (input: {
+        table: { id: string; token_version: number };
+        restaurant: { id: string };
+        output: string;
+      }) => {
+        await render(input);
+        await client.query(
+          "UPDATE restaurant_tables SET token_version = token_version + 1 WHERE id = $1",
+          [input.table.id],
+        );
+      };
+      await expect(
+        runTableCommand(
+          ["create", "--restaurant", "phase1", "--tables", "T33:Table 33", "--out", output],
+          environment,
+          () => {},
+          staleRender,
+        ),
+      ).rejects.toThrow(/changed while rendering/);
+      const stale = await client.query(
+        "SELECT id FROM restaurant_tables WHERE restaurant_id = $1 AND code = 'T33'",
+        [restaurantId],
+      );
+      await expect(
+        access(placardDirectory(output, restaurantId, stale.rows[0].id, 1)),
+      ).rejects.toThrow();
+    } finally {
+      await rm(output, { recursive: true, force: true });
+    }
+  });
+
+  it("does not back-print old v2 jobs and keeps v1 active when the v2 cutoff is absent", async () => {
+    await client.query(
+      "UPDATE integration_jobs SET status = 'succeeded' WHERE provider = 'local_worker' AND status IN ('queued', 'retry_scheduled')",
+    );
+    const createTableOrder = async () => {
+      const quote = await quoteTable(signTableCode({ restaurantId, tableId, tokenVersion: 3 }));
+      if (!quote.ok) throw new Error("quote failed");
+      const order = await createPendingOrder({
+        quoteId: quote.data.quoteId,
+        attemptId: randomUUID(),
+        customer: { name: "Cutoff Guest", phone: "0400000000", email: "cutoff@example.com" },
+        termsAccepted: true,
+        termsVersion: "v1",
+      });
+      if (!order.ok) throw new Error("order failed");
+      return order.data.id;
+    };
+    const oldOrderId = await createTableOrder();
+    await client.query(
+      "UPDATE integration_jobs SET created_at = now() - interval '1 day' WHERE order_id = $1",
+      [oldOrderId],
+    );
+    const newOrderId = await createTableOrder();
+    const original = process.env.PRINT_V2_CREATED_AFTER;
+    try {
+      delete process.env.PRINT_V2_CREATED_AFTER;
+      const pickup = await client.query(
+        `SELECT id FROM integration_jobs WHERE payload_version = 1
+         AND jsonb_typeof(payload->'items') = 'array' LIMIT 1`,
+      );
+      expect(pickup.rows).toHaveLength(1);
+      await client.query("UPDATE integration_jobs SET status = 'queued' WHERE id = $1", [
+        pickup.rows[0].id,
+      ]);
+      expect((await listLocalPrintJobs()).map((job) => job.id)).toContain(pickup.rows[0].id);
+      expect((await listLocalPrintJobs()).some((job) => job.orderId === newOrderId)).toBe(false);
+      const unconfigured = await listMerchantPrintJobs(process.env.ADMIN_ACCESS_TOKEN!);
+      expect(unconfigured.find((job) => job.orderId === oldOrderId)?.skipReason).toBe(
+        "v2_cutoff_not_configured",
+      );
+      await client.query("UPDATE integration_jobs SET status = 'succeeded' WHERE id = $1", [
+        pickup.rows[0].id,
+      ]);
+      process.env.PRINT_V2_CREATED_AFTER = new Date(Date.now() - 60_000).toISOString();
+      const visible = await listLocalPrintJobs();
+      expect(visible.filter((job) => job.orderId === oldOrderId)).toHaveLength(0);
+      expect(visible.filter((job) => job.orderId === newOrderId)).toHaveLength(2);
+      const configured = await listMerchantPrintJobs(process.env.ADMIN_ACCESS_TOKEN!);
+      expect(configured.find((job) => job.orderId === oldOrderId)?.skipReason).toBe(
+        "v2_created_before_cutoff",
+      );
+      const [first, second] = await Promise.all([claimLocalPrintJob(), claimLocalPrintJob()]);
+      expect(first?.orderId).toBe(newOrderId);
+      expect(second?.orderId).toBe(newOrderId);
+      expect(await claimLocalPrintJob()).toBeNull();
+      const oldJobs = await client.query(
+        "SELECT status FROM integration_jobs WHERE order_id = $1",
+        [oldOrderId],
+      );
+      expect(oldJobs.rows.map((row) => row.status)).toEqual(["queued", "queued"]);
+      process.env.PRINT_V2_CREATED_AFTER = "invalid";
+      expect((await listLocalPrintJobs()).some((job) => job.orderId === oldOrderId)).toBe(false);
+      expect(
+        (await listMerchantPrintJobs(process.env.ADMIN_ACCESS_TOKEN!)).find(
+          (job) => job.orderId === oldOrderId,
+        )?.skipReason,
+      ).toBe("v2_cutoff_invalid");
+    } finally {
+      if (original) process.env.PRINT_V2_CREATED_AFTER = original;
+      else delete process.env.PRINT_V2_CREATED_AFTER;
+    }
+  });
+
+  it("requires a manual decision before requeueing an expired print lease", async () => {
+    await client.query(
+      "UPDATE integration_jobs SET status = 'succeeded' WHERE provider = 'local_worker' AND status IN ('queued', 'retry_scheduled')",
+    );
+    const quote = await quoteTable(signTableCode({ restaurantId, tableId, tokenVersion: 3 }));
+    if (!quote.ok) throw new Error("quote failed");
+    const order = await createPendingOrder({
+      quoteId: quote.data.quoteId,
+      attemptId: randomUUID(),
+      customer: { name: "Lease Guest", phone: "0400000000", email: "lease@example.com" },
+      termsAccepted: true,
+      termsVersion: "v1",
+    });
+    if (!order.ok) throw new Error("order failed");
+    const leased = await claimLocalPrintJob();
+    expect(leased?.orderId).toBe(order.data.id);
+    if (!leased) return;
+    await client.query(
+      "UPDATE integration_jobs SET lease_expires_at = now() - interval '1 second' WHERE id = $1",
+      [leased.id],
+    );
+    expect((await listLocalPrintJobs()).some((job) => job.id === leased.id)).toBe(false);
+    expect(
+      (await listMerchantPrintJobs(process.env.ADMIN_ACCESS_TOKEN!)).find(
+        (job) => job.id === leased.id,
+      )?.canRetry,
+    ).toBe(true);
+    expect(await retryLocalPrintJob(leased.id, "Verified no paper was printed")).toMatchObject({
+      ok: true,
+      job: { status: "queued" },
+    });
+    expect(
+      await reportLocalPrintJob(leased.id, {
+        leaseToken: leased.leaseToken!,
+        result: "queued",
+        queueName: "Brother",
+        spoolerJobId: "Brother-too-late",
+      }),
+    ).toMatchObject({ ok: false, status: 404 });
+  });
+
+  it("runs a simulated v1 pickup plus v2 table order through the local worker", async () => {
+    await client.query(
+      "UPDATE integration_jobs SET status = 'succeeded' WHERE provider = 'local_worker' AND status IN ('queued', 'retry_scheduled')",
+    );
+    const oldPickup = await client.query(
+      `SELECT id FROM integration_jobs WHERE provider = 'local_worker' AND payload_version = 1
+       AND jsonb_typeof(payload->'items') = 'array' ORDER BY created_at LIMIT 2`,
+    );
+    expect(oldPickup.rows).toHaveLength(2);
+    await client.query("UPDATE integration_jobs SET status = 'queued' WHERE id = ANY($1::uuid[])", [
+      oldPickup.rows.map((row) => row.id),
+    ]);
+    const quote = await quoteTable(signTableCode({ restaurantId, tableId, tokenVersion: 3 }));
+    if (!quote.ok) throw new Error("quote failed");
+    const tableOrder = await createPendingOrder({
+      quoteId: quote.data.quoteId,
+      attemptId: randomUUID(),
+      customer: { name: "Final Guest", phone: "0400000000", email: "final@example.com" },
+      termsAccepted: true,
+      termsVersion: "v1",
+    });
+    if (!tableOrder.ok) throw new Error("order failed");
+    const submitted: Array<{ queue: string; path: string; title: string }> = [];
+    await runWorker({
+      once: true,
+      api: {
+        list: async () => [],
+        claim: claimLocalPrintJob,
+        report: async (id, result) => {
+          const response = await reportLocalPrintJob(
+            id,
+            result as Parameters<typeof reportLocalPrintJob>[1],
+          );
+          if (!response.ok) throw new Error(response.error);
+          return response.job;
+        },
+      },
+      queues: { kitchen: "KitchenQueue", front: "FrontQueue" },
+      savePdf: async (job) => `/private/tmp/${job.id}.pdf`,
+      submit: async (queue, path, title) => {
+        submitted.push({ queue, path, title });
+        return `${queue}-${submitted.length}`;
+      },
+      wait: async () => {},
+      log: () => {},
+    });
+    expect(submitted).toHaveLength(4);
+    expect(submitted.filter((entry) => entry.queue === "KitchenQueue")).toHaveLength(2);
+    expect(submitted.filter((entry) => entry.queue === "FrontQueue")).toHaveLength(2);
+    expect(submitted.every((entry) => entry.path.endsWith(".pdf"))).toBe(true);
+    const result = await client.query(
+      `SELECT status, external_id FROM integration_jobs
+       WHERE id = ANY($1::uuid[]) OR order_id = $2`,
+      [oldPickup.rows.map((row) => row.id), tableOrder.data.id],
+    );
+    expect(result.rows).toHaveLength(4);
+    expect(result.rows.every((row) => row.status === "succeeded" && row.external_id)).toBe(true);
   });
 });

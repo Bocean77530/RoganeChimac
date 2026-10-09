@@ -38,3 +38,25 @@ export const recordCounterPaymentFn = createServerFn({ method: "POST" })
     const { recordCounterPayment } = await import("@/server/merchant-orders.server");
     return recordCounterPayment(data);
   });
+
+export const listMerchantPrintJobsFn = createServerFn({ method: "POST" })
+  .validator(z.object({ adminToken: token }))
+  .handler(async ({ data }) => {
+    const { listMerchantPrintJobs } = await import("@/server/local-print-jobs.server");
+    return listMerchantPrintJobs(data.adminToken);
+  });
+
+export const retryMerchantPrintJobFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      adminToken: token,
+      jobId: z.string().uuid(),
+      reason: z.string().trim().min(8).max(200),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { requireAdminAccess } = await import("@/server/admin-auth.server");
+    const { retryLocalPrintJob } = await import("@/server/local-print-jobs.server");
+    requireAdminAccess(data.adminToken);
+    return retryLocalPrintJob(data.jobId, data.reason);
+  });

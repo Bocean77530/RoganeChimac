@@ -3,7 +3,7 @@ import { mkdtemp, chmod, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { renderTicket } from "./tickets.mjs";
+import { renderTicket, validatePrintJob } from "./tickets.mjs";
 import { saveTicketPdf } from "./pdf.mjs";
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -11,9 +11,12 @@ const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 export class DefinitePrintFailure extends Error {}
 export class UnknownPrintOutcome extends Error {}
 
-export async function submitToLp(queueName, ticket, title, timeoutMs = 30_000) {
+export async function submitToLp(queueName, pdfPath, title, timeoutMs = 30_000) {
+  if (!queueName || queueName.length > 128) throw new DefinitePrintFailure("Invalid printer queue");
   return new Promise((resolveJob, rejectJob) => {
-    const child = spawn("lp", ["-d", queueName, "-t", title], { stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn("lp", ["-d", queueName, "-t", title, pdfPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let stdout = "";
     let timedOut = false;
     const timeout = setTimeout(() => {
@@ -24,7 +27,6 @@ export async function submitToLp(queueName, ticket, title, timeoutMs = 30_000) {
       stdout = (stdout + chunk).slice(0, 4096);
     });
     child.stderr.on("data", () => {}); // Never log spooler output: it may contain customer data.
-    child.stdin.on("error", () => {});
     child.on("error", (error) => {
       clearTimeout(timeout);
       rejectJob(
@@ -44,26 +46,18 @@ export async function submitToLp(queueName, ticket, title, timeoutMs = 30_000) {
         return rejectJob(new UnknownPrintOutcome("lp returned success without a parseable job ID"));
       resolveJob(match[1]);
     });
-    child.stdin.end(ticket);
   });
 }
 
 export async function processLeasedJob(
   job,
-  {
-    queueName,
-    submit,
-    report,
-    savePdf = saveTicketPdf,
-    pdfDirectory,
-    wait = sleep,
-    log = () => {},
-    retryDelayMs = 3000,
-  },
+  { queueName, submit, report, savePdf = saveTicketPdf, pdfDirectory, log = () => {} },
 ) {
   let result;
+  let pdfPath;
   try {
-    const pdfPath = await savePdf(job, pdfDirectory);
+    validatePrintJob(job);
+    pdfPath = await savePdf(job, pdfDirectory);
     log(`Job ${job.id}: PDF saved at ${pdfPath}`);
   } catch {
     result = {
@@ -77,7 +71,7 @@ export async function processLeasedJob(
     if (result) throw new DefinitePrintFailure(result.error);
     const spoolerJobId = await submit(
       queueName,
-      renderTicket(job),
+      pdfPath,
       `Rogane Chimac ${job.destination} ${job.payload.orderNumber}`,
     );
     result = { leaseToken: job.leaseToken, result: "queued", queueName, spoolerJobId };
@@ -90,19 +84,14 @@ export async function processLeasedJob(
     }
     result = { leaseToken: job.leaseToken, result: "failed", queueName, error: error.message };
   }
-  for (;;) {
-    try {
-      const acknowledged = await report(job.id, result);
-      log(`Job ${job.id}: ${acknowledged.status}`);
-      return acknowledged.status;
-    } catch (error) {
-      if (error instanceof WorkerHttpError && error.status >= 400 && error.status < 500)
-        throw error;
-      log(
-        `Job ${job.id}: report unavailable; retrying acknowledgement without resubmitting to lp.`,
-      );
-      await wait(retryDelayMs);
-    }
+  try {
+    const acknowledged = await report(job.id, result);
+    log(`Job ${job.id}: ${acknowledged.status}`);
+    return { status: acknowledged.status };
+  } catch (error) {
+    if (error instanceof WorkerHttpError && error.status >= 400 && error.status < 500) throw error;
+    log(`Job ${job.id}: acknowledgement pending; lp will not be called again.`);
+    return { status: "ack_pending", report: result };
   }
 }
 
@@ -160,7 +149,9 @@ export async function runWorker({
   pollIntervalMs = 3000,
   pdfDirectory = resolve("data/receipts"),
   submit = submitToLp,
+  savePdf = saveTicketPdf,
   log = console.log,
+  wait = sleep,
 }) {
   if (dryRun) {
     if (!once) throw new Error("--dry-run must be used with --once");
@@ -170,27 +161,53 @@ export async function runWorker({
     );
     return;
   }
+  const pendingAcknowledgements = new Map();
   for (;;) {
+    const acknowledgements = Promise.all(
+      [...pendingAcknowledgements].slice(0, 10).map(async ([id, pending]) => {
+        try {
+          const acknowledged = await api.report(id, pending);
+          log(`Job ${id}: ${acknowledged.status}`);
+          pendingAcknowledgements.delete(id);
+        } catch (error) {
+          if (error instanceof WorkerHttpError && error.status >= 400 && error.status < 500) {
+            log(`Job ${id}: acknowledgement rejected; inspect before manual retry.`);
+            pendingAcknowledgements.delete(id);
+          }
+        }
+      }),
+    );
     let job;
     try {
       job = await api.claim();
     } catch (error) {
       if (error instanceof WorkerHttpError && [401, 403, 404].includes(error.status)) throw error;
       log("Order API unavailable; retrying claim.");
-      await sleep(pollIntervalMs);
+      await acknowledgements;
+      await wait(pollIntervalMs);
       continue;
     }
     if (!job) {
-      if (once) return;
-      await sleep(pollIntervalMs);
+      await acknowledgements;
+      if (once && pendingAcknowledgements.size === 0) return;
+      await wait(pollIntervalMs);
       continue;
     }
     const queueName = queues[job.destination];
     try {
-      await processLeasedJob(job, { queueName, submit, report: api.report, pdfDirectory, log });
+      const outcome = await processLeasedJob(job, {
+        queueName,
+        submit,
+        savePdf,
+        report: api.report,
+        pdfDirectory,
+        log,
+      });
+      if (outcome.report) pendingAcknowledgements.set(job.id, outcome.report);
     } catch {
       log(`Job ${job.id}: acknowledgement rejected; inspect job before manual retry.`);
     }
+    await acknowledgements;
   }
 }
 

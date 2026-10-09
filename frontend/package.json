@@ -19,7 +19,8 @@
     "db:check": "drizzle-kit check",
     "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
     "db:seed": "bun run src/db/seed-entry.ts",
-    "print:main": "sh printing/start-main-worker.sh"
+    "print:main": "sh printing/start-main-worker.sh",
+    "tables:manage": "node scripts/tables.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
